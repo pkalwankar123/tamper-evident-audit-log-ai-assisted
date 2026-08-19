@@ -1,9 +1,0 @@
-spring:
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/audit}
-    username: ${DB_USERNAME:audit}
-    password: ${DB_PASSWORD:audit}
-    driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
