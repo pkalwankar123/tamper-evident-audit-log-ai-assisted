@@ -4,7 +4,7 @@ tamper-evident-audit-log-ai-assisted
 Initial project foundation for the tamper evident audit log.
 
 Current Version
-0.0.1-SNAPSHOT
+0.0.2-SNAPSHOT
 
 Technology
 Java 21
