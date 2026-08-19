@@ -66,3 +66,14 @@ Defined the detailed tamper-evident audit-log design based on the previous secur
 The design uses Canonical JSON + SHA-256 cryptographic hashing + hash chaining + verification. 
 Each audit record contains a previousHash linking it to the previous record and a hash calculated from its canonical representation. The verification process recalculates hashes and validates chain links to detect modified, deleted, inserted, or reordered records. 
 The design provides tamper evidence/detection, while recognizing that hash chaining alone does not prevent an attacker with unrestricted write access from rewriting the complete chain.
+
+2026-08-19 - Prompt - The design should ensure that redaction does not weaken the integrity mechanism: the redacted representation must be the data that is canonicalized and included in the integrity hash. Clearly distinguish data confidentiality/privacy protection through redaction from tamper detection through hashing and hash chaining.
+
+Response - 
+Yes — that wording is correct and important. It makes the security boundary very clear:
+
+Redaction protects confidentiality/privacy.
+Canonical JSON + hashing + hash chaining provide tamper detection.
+The redacted version is what gets canonicalized and hashed, so the integrity check applies to exactly what is stored.
+
+2026-08-19 - Prompt - Add unit tests to verify the tamper-evident audit-log mechanism.
