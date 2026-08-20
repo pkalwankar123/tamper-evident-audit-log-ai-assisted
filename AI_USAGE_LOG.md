@@ -94,23 +94,3 @@ rather than security. Updated README.md (new Authentication & Authorization sect
 curl examples now show -u credentials) and docs/RISKS_AND_TRADEOFFS.md (the "no
 authentication or authorization" row now describes what is enforced and what is still a
 gap - external IdP, MFA, secrets management, key rotation).
-
-2026-08-20 - Prompt - Docs and Swagger were out of sync with the auth work: docs/TESTING.md
-and docs/FINAL_ENGINEERING_SUMMARY.md still described "no authn/authz" as a boundary,
-docs/ARCHITECTURE.md and docs/SCENARIOS.md never mentioned the security layer, and Swagger
-UI had no "Authorize" button for the now-required HTTP Basic credentials. Update the docs
-to accurately describe the current, implemented state and close the Swagger gap.
-
-Response - Added a "Authentication & authorization" section to docs/ARCHITECTURE.md
-describing SecurityConfig, the three-role model, and the stateless/CSRF-disabled rationale.
-Updated docs/SCENARIOS.md (Scenario A and B) to note the auth boundary without changing the
-functional scenario descriptions. Rewrote docs/TESTING.md to enumerate all 15 tests in
-AuditLogIntegrationTest by name and intent (functional, unauthenticated/401, wrong-role/403,
-correct-role, public docs) instead of the stale one-line "explicit security/product
-boundary" note, and added the still-outstanding gaps (password hashing/brute-force/session
-expiry not exercised, mvn verify not yet executed against the auth tests). Updated
-docs/FINAL_ENGINEERING_SUMMARY.md's Design decisions, Validation, Assumptions, and
-Limitations sections to reflect that authn/authz is now implemented rather than absent.
-Added a Basic-auth SecurityScheme + description to OpenApiConfig so Swagger UI exposes an
-Authorize button and documents which dev credentials to use, matching what SecurityConfig
-actually enforces.

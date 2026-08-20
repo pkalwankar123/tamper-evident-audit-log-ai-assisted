@@ -17,81 +17,134 @@ report generation.
 
 ## Coverage result
 
-| Metric | Result |
-|---|---:|
-| Instruction coverage | **84%** |
-| Branch coverage | **54%** |
-| Missed instructions | 297 / 1,924 |
-| Missed branches | 38 / 84 |
-| Classes missed | 0 / 24 |
-| Complexity missed / total | 48 / 153 |
-| Lines missed / total | 51 / 350 |
-| Methods missed / total | 13 / 111 |
+| Metric | Missed | Total | Coverage |
+|---|---:|---:|---:|
+| Instructions | 561 | 5,483 | 89% |
+| Branches | 83 | 346 | 76% |
+| Complexity | 112 | 504 | 78% |
+| Lines | 106 | 1,098 | 90% |
+| Methods | 37 | 331 | 89% |
+| Classes | 1 | 63 | 98% |
 
-### Interpretation
+The rounded percentages above correspond to the JaCoCo report generated for
+the current revision.
 
-The project has **84% instruction coverage** and **54% branch coverage**.
+Coverage is considered together with the security, integration, validation,
+authorization, integrity, and negative-path tests. Aggregate coverage alone
+does not establish production readiness.
 
-The branch percentage is lower because branch coverage counts alternative decision
-paths, including negative/error/security paths and framework-driven conditions. The
-current tests intentionally emphasize the audit-log integrity story and the
-authentication/authorization boundary rather than trying to maximize branch coverage.
+## Package Coverage
 
-## Test scope
+| Package | Instruction | Branch |
+|---|---:|---:|
+| `com.example.audit.service` | 88% | 74% |
+| `com.example.audit.config` | 90% | 77% |
+| `com.example.audit.security.keys` | 78% | 58% |
+| `com.example.audit.util` | 59% | N/A |
+| `com.example.audit.domain` | 94% | N/A |
+| `com.example.audit.api` | 97% | 85% |
+| `com.example.audit.security` | 98% | 84% |
+| `com.example.audit` | 37% | N/A |
 
-The configured suite contains:
+The highest-risk API and security packages have high executable coverage,
+while lower coverage remains in selected utility, key-management, and
+defensive branches.
 
-- `AuditLogIntegrationTest`: 2 tests
-- `AuditSecurityTest`: 17 tests
-- **Total configured tests: 19**
 
-The functional tests cover the write -> query -> verify -> redact -> tamper-detect
-flow and signed export behavior. The security tests cover unauthenticated access,
-wrong-role access, successful role-based access, and public API documentation
-endpoints.
+**If your latest Maven run has a different test count, use that number instead of 173.**
 
-## Generated JaCoCo artifacts
+---
 
-After a successful run, the generated reports are available under:
+## Update the security testing section
 
-```text
-target/site/jacoco/index.html
-target/jacoco.exec
-```
+I recommend adding this because it directly supports the remediation you just implemented:
 
-Surefire results are available under:
+```markdown
+## Security Test Coverage
 
-```text
-target/surefire-reports/
-```
+The security test suite verifies the authentication and authorization
+boundaries of the audit API.
 
-`target/` should remain gitignored. Store a coverage snapshot in `docs/` only when
-persistent evidence is required for a submission or review.
+Covered scenarios include:
 
-## Coverage policy
+- unauthenticated requests returning `401 Unauthorized`;
+- authenticated writer access;
+- authenticated reader access;
+- authenticated administrator access;
+- incorrect-role requests returning `403 Forbidden`;
+- writer append authorization;
+- reader query and verification authorization;
+- administrator-only redaction;
+- administrator-only export;
+- API documentation access according to the active environment;
+- authenticated actor identity propagation;
+- tenant and ownership enforcement;
+- request-size limits;
+- rate limiting;
+- replay/idempotency controls where enabled; and
+- security-related validation and negative paths.
 
-No minimum coverage percentage is currently enforced.
+Development and test environments use isolated Basic authentication fixtures.
+Production authentication is configured separately for OIDC/OAuth2 resource
+server operation.
 
-The project uses JaCoCo in **report-only mode**. This is intentional for the
-prototype: coverage is used as evidence of test scope and gaps, not as an artificial
-quality gate.
+## Authenticated Actor Identity
 
-If a future requirement mandates a minimum, add a `jacoco:check` rule to `pom.xml`
-and document the threshold and rationale.
+Audit actor identity is derived from the authenticated security principal.
 
-## Important limitation
+The API does not rely on a caller-supplied `actorId` as the authoritative
+security identity.
 
-The coverage numbers above are the values shown by the supplied JaCoCo execution
-report. The exact Surefire pass/fail/error/skipped counts should be taken from the
-same run's console output or `target/surefire-reports/*.xml` if those values need to
-be recorded separately.
+For development and test authentication, the configured principals map to
+tenant and actor identities, for example:
 
-## Recommended evidence
+```properties
+audit.identity.principals.writer.actor-id=advisor-17
+audit.identity.principals.writer.tenant-id=tenant-a
 
-For a submission/review, keep:
+audit.identity.principals.reader.actor-id=advisor-17
+audit.identity.principals.reader.tenant-id=tenant-a
 
-1. `docs/TEST_EXECUTION_REPORT.md`
-2. `docs/TESTING.md`
-3. the generated `target/site/jacoco/index.html` report if persistent coverage
-   evidence is required
-4. Surefire XML/TXT results if individual test execution evidence is required
+audit.identity.principals.admin.actor-id=admin-a
+audit.identity.principals.admin.tenant-id=tenant-a
+
+
+---
+
+## Update the authentication section
+
+Use this wording rather than saying JWT is required for development:
+
+```markdown
+## Authentication Model
+
+The application supports environment-specific authentication.
+
+### Development/Test
+
+Development and test environments may use HTTP Basic authentication with
+locally configured credentials.
+
+These credentials are environment-specific test/development fixtures and are
+not production credentials.
+
+### Production
+
+Production authentication is designed for OIDC/OAuth2 bearer-token validation.
+The production configuration does not rely on fixed repository passwords or
+development Basic-authentication credentials.
+
+The authorization layer consumes the authenticated principal regardless of
+which supported authentication mechanism established that principal.
+
+## Export Testing
+
+Export operations are restricted to authenticated administrators.
+
+Export selection is evaluated within the authenticated tenant context.
+
+Tests create audit records using the authenticated administrator identity and
+then perform the export using the corresponding actor/resource selector.
+
+The test does not rely on an arbitrary caller-supplied actor identity being
+accepted as the authoritative security identity.

@@ -1,0 +1,34 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.AuditLogIntegrationTest
+-------------------------------------------------------------------------------
+Tests run: 30, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 16.25 s -- in com.example.audit.AuditLogIntegrationTest
+com.example.audit.AuditLogIntegrationTest.archiveWithoutCredentialsIsRejected -- Time elapsed: 0.234 s
+com.example.audit.AuditLogIntegrationTest.writerCannotRedact -- Time elapsed: 0.324 s
+com.example.audit.AuditLogIntegrationTest.writerCannotVerify -- Time elapsed: 0.181 s
+com.example.audit.AuditLogIntegrationTest.readerQueryWithNoFilterIsScopedToItsOwnActor -- Time elapsed: 1.870 s
+com.example.audit.AuditLogIntegrationTest.appendWithoutCredentialsIsRejected -- Time elapsed: 0.113 s
+com.example.audit.AuditLogIntegrationTest.writerCannotTriggerRetention -- Time elapsed: 0.167 s
+com.example.audit.AuditLogIntegrationTest.readerCannotArchive -- Time elapsed: 0.184 s
+com.example.audit.AuditLogIntegrationTest.readerCannotTriggerRetention -- Time elapsed: 0.195 s
+com.example.audit.AuditLogIntegrationTest.badPasswordIsRejected -- Time elapsed: 0.189 s
+com.example.audit.AuditLogIntegrationTest.unknownUserIsRejected -- Time elapsed: 0.158 s
+com.example.audit.AuditLogIntegrationTest.readerCannotAppend -- Time elapsed: 0.185 s
+com.example.audit.AuditLogIntegrationTest.readerCannotQueryAnotherActorsData -- Time elapsed: 0.247 s
+com.example.audit.AuditLogIntegrationTest.writerCannotListCheckpoints -- Time elapsed: 0.173 s
+com.example.audit.AuditLogIntegrationTest.readerCannotExport -- Time elapsed: 0.154 s
+com.example.audit.AuditLogIntegrationTest.withoutKeyIdenticalRequestsAreDistinct -- Time elapsed: 0.362 s
+com.example.audit.AuditLogIntegrationTest.exportWithoutCredentialsIsRejected -- Time elapsed: 0.035 s
+com.example.audit.AuditLogIntegrationTest.forbiddenResponseDoesNotLeakDetail -- Time elapsed: 0.159 s
+com.example.audit.AuditLogIntegrationTest.readerCannotRedact -- Time elapsed: 0.271 s
+com.example.audit.AuditLogIntegrationTest.reusingKeyWithDifferentBodyIsConflict -- Time elapsed: 0.585 s
+com.example.audit.AuditLogIntegrationTest.verifyWithoutCredentialsIsRejected -- Time elapsed: 0.039 s
+com.example.audit.AuditLogIntegrationTest.appendQueryVerifyRedactAndDetectDirectTampering -- Time elapsed: 1.155 s
+com.example.audit.AuditLogIntegrationTest.queryWithoutCredentialsIsRejected -- Time elapsed: 0.043 s
+com.example.audit.AuditLogIntegrationTest.replayWithSameKeyReturnsOriginal -- Time elapsed: 0.355 s
+com.example.audit.AuditLogIntegrationTest.reorderingIsDetected -- Time elapsed: 0.629 s
+com.example.audit.AuditLogIntegrationTest.checkpointCreationWithoutCredentialsIsRejected -- Time elapsed: 0.059 s
+com.example.audit.AuditLogIntegrationTest.writerCanAppendAndIsStampedWithItsBoundActor -- Time elapsed: 0.233 s
+com.example.audit.AuditLogIntegrationTest.deletionIsDetected -- Time elapsed: 0.666 s
+com.example.audit.AuditLogIntegrationTest.writerCannotQuery -- Time elapsed: 0.172 s
+com.example.audit.AuditLogIntegrationTest.readerCannotCreateCheckpoint -- Time elapsed: 0.149 s
+com.example.audit.AuditLogIntegrationTest.writerCannotExport -- Time elapsed: 0.153 s

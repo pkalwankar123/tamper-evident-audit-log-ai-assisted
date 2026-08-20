@@ -10,7 +10,7 @@
   </parent>
   <groupId>com.example</groupId>
   <artifactId>tamper-evident-audit-log</artifactId>
-  <version>1.0.0-RELEASE</version>
+  <version>1.0.1-RELEASE</version>
   <name>tamper-evident-audit-log</name>
   <description>Tamper-evident append-only audit log service</description>
   <properties>
@@ -32,6 +32,10 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
     </dependency>
     <dependency>
       <groupId>com.h2database</groupId>
@@ -81,12 +85,26 @@
           </execution>
         </executions>
       </plugin>
+      <!-- Surefire is configured explicitly so that `mvn clean verify` always runs the
+           tests and always writes the XML/TXT reports that the evidence gate requires,
+           rather than depending on inherited defaults. -->
       <plugin>
-        <!-- Generates a stored coverage report on every `mvn verify`: HTML at
-             target/site/jacoco/index.html, raw data at target/jacoco.exec.
-             Test execution results are at target/surefire-reports/. Neither directory
-             is committed (see .gitignore) - copy the report out of target/ if you need
-             to archive a specific run's numbers; see docs/TESTING.md. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <skipTests>false</skipTests>
+          <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+          <reportFormat>plain</reportFormat>
+          <disableXmlReport>false</disableXmlReport>
+          <trimStackTrace>false</trimStackTrace>
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/*Tests.java</include>
+          </includes>
+        </configuration>
+      </plugin>
+      <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
         <version>0.8.12</version>
@@ -95,8 +113,16 @@
             <id>prepare-agent</id>
             <goals><goal>prepare-agent</goal></goals>
           </execution>
+          <!-- Bound to `test` so the report exists whenever tests have run, and
+               re-bound at `verify` so `mvn clean verify` always regenerates it.
+               Produces target/site/jacoco/jacoco.xml, jacoco.csv and index.html. -->
           <execution>
             <id>report</id>
+            <phase>test</phase>
+            <goals><goal>report</goal></goals>
+          </execution>
+          <execution>
+            <id>report-verify</id>
             <phase>verify</phase>
             <goals><goal>report</goal></goals>
           </execution>

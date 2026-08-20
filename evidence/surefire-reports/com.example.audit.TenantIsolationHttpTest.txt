@@ -1,0 +1,12 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.TenantIsolationHttpTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.878 s -- in com.example.audit.TenantIsolationHttpTest
+com.example.audit.TenantIsolationHttpTest.tenantBAdminCannotExportTenantA -- Time elapsed: 0.224 s
+com.example.audit.TenantIsolationHttpTest.verifyIsScopedToTheCallersTenant -- Time elapsed: 0.379 s
+com.example.audit.TenantIsolationHttpTest.tenantBAdminCannotRedactTenantARecord -- Time elapsed: 0.176 s
+com.example.audit.TenantIsolationHttpTest.tenantBAdminCannotFetchTenantARecordById -- Time elapsed: 0.306 s
+com.example.audit.TenantIsolationHttpTest.idempotencyKeysAreTenantScoped -- Time elapsed: 0.208 s
+com.example.audit.TenantIsolationHttpTest.tokenWithoutTenantClaimIsDenied -- Time elapsed: 0.030 s
+com.example.audit.TenantIsolationHttpTest.tenantBCannotReadTenantA -- Time elapsed: 0.168 s
+com.example.audit.TenantIsolationHttpTest.archiveDoesNotCrossTenants -- Time elapsed: 0.315 s

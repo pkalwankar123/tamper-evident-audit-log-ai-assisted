@@ -1,0 +1,15 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.ExportVerificationTest
+-------------------------------------------------------------------------------
+Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.994 s -- in com.example.audit.ExportVerificationTest
+com.example.audit.ExportVerificationTest.untouchedBundleVerifies -- Time elapsed: 0.562 s
+com.example.audit.ExportVerificationTest.tamperedSignatureIsDetected -- Time elapsed: 0.319 s
+com.example.audit.ExportVerificationTest.bundleSignedWithAnUntrustedKeyIsRejected -- Time elapsed: 0.340 s
+com.example.audit.ExportVerificationTest.exportRequiresExactlyOneSelector -- Time elapsed: 0.478 s
+com.example.audit.ExportVerificationTest.archivedRecordsStayVerifiableInExports -- Time elapsed: 0.520 s
+com.example.audit.ExportVerificationTest.exportSpansContiguousSegmentWithExactCardinality -- Time elapsed: 0.622 s
+com.example.audit.ExportVerificationTest.droppingARecordIsDetected -- Time elapsed: 0.645 s
+com.example.audit.ExportVerificationTest.alteredRecordFieldIsDetected -- Time elapsed: 0.332 s
+com.example.audit.ExportVerificationTest.emptySelectionIsNotFound -- Time elapsed: 0.312 s
+com.example.audit.ExportVerificationTest.redactedRecordVerifiesThroughItsLedger -- Time elapsed: 0.494 s
+com.example.audit.ExportVerificationTest.alteredPayloadInBundleIsDetected -- Time elapsed: 0.330 s

@@ -1,0 +1,28 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.MalformedRequestTest
+-------------------------------------------------------------------------------
+Tests run: 24, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.532 s -- in com.example.audit.MalformedRequestTest
+com.example.audit.MalformedRequestTest.blankEventTypeIsRejected -- Time elapsed: 0.282 s
+com.example.audit.MalformedRequestTest.redactingAMissingFieldIsRejected -- Time elapsed: 0.305 s
+com.example.audit.MalformedRequestTest.wrongContentTypeIsRejected -- Time elapsed: 0.197 s
+com.example.audit.MalformedRequestTest.unparseableJsonIsRejected -- Time elapsed: 0.218 s
+com.example.audit.MalformedRequestTest.redactionRequiresAReason -- Time elapsed: 0.141 s
+com.example.audit.MalformedRequestTest.malformedTimestampIsRejected -- Time elapsed: 0.166 s
+com.example.audit.MalformedRequestTest.nonNumericPaginationIsRejected -- Time elapsed: 0.315 s
+com.example.audit.MalformedRequestTest.missingEventTypeIsRejected -- Time elapsed: 0.143 s
+com.example.audit.MalformedRequestTest.malformedJsonPointerIsRejected -- Time elapsed: 0.292 s
+com.example.audit.MalformedRequestTest.maximumPageSizeIsAccepted -- Time elapsed: 0.202 s
+com.example.audit.MalformedRequestTest.emptyBodyIsRejected -- Time elapsed: 0.160 s
+com.example.audit.MalformedRequestTest.unknownRouteStillRequiresAuthentication -- Time elapsed: 0.022 s
+com.example.audit.MalformedRequestTest.redactingAnUnknownRecordIsNotFound -- Time elapsed: 0.155 s
+com.example.audit.MalformedRequestTest.oversizedPageSizeIsRejected -- Time elapsed: 0.151 s
+com.example.audit.MalformedRequestTest.oversizedPayloadIsRejected -- Time elapsed: 0.029 s
+com.example.audit.MalformedRequestTest.overlongFieldValuesAreRejected -- Time elapsed: 0.158 s
+com.example.audit.MalformedRequestTest.zeroPageSizeIsRejected -- Time elapsed: 0.164 s
+com.example.audit.MalformedRequestTest.malformedUuidPathIsRejected -- Time elapsed: 0.141 s
+com.example.audit.MalformedRequestTest.pathTraversalIsRefused -- Time elapsed: 0.016 s
+com.example.audit.MalformedRequestTest.missingPayloadIsRejected -- Time elapsed: 0.155 s
+com.example.audit.MalformedRequestTest.invertedTimeRangeIsRejected -- Time elapsed: 0.153 s
+com.example.audit.MalformedRequestTest.negativePageIsRejected -- Time elapsed: 0.365 s
+com.example.audit.MalformedRequestTest.oversizedIdempotencyKeyIsRejected -- Time elapsed: 0.298 s
+com.example.audit.MalformedRequestTest.payloadJustUnderTheLimitIsAccepted -- Time elapsed: 0.231 s

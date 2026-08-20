@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ChainHead.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.domain</a> &gt; <span class="el_source">ChainHead.java</span></div><h1>ChainHead.java</h1><pre class="source lang-java linenums">package com.example.audit.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+/**
+ * The serialization point for appends, one row per tenant.
+ *
+ * &lt;p&gt;This exists to replace the previous in-process {@code synchronized} block, which
+ * only serialized writers inside a single JVM and therefore provided no protection at
+ * all once the service runs on more than one node. Every append takes a
+ * {@code PESSIMISTIC_WRITE} lock on this row for its tenant, so the database - the one
+ * component genuinely shared by every node - is what orders concurrent appends.
+ *
+ * &lt;p&gt;The head is advanced inside the same transaction that inserts the record, so a
+ * rolled-back append leaves no gap: the head still points at the last committed record
+ * and the next append reuses the index. The previous design read the tail with a
+ * separate query, which could hand the same index to two transactions whenever the
+ * table was empty (no row existed to lock).
+ */
+@Entity
+@Table(name = &quot;chain_heads&quot;)
+public class ChainHead {
+    @Id
+    @Column(name = &quot;tenant_id&quot;, nullable = false, updatable = false, length = 200)
+    private String tenantId;
+
+    @Column(name = &quot;last_index&quot;, nullable = false)
+    private long lastIndex;
+
+    @Column(name = &quot;last_hash&quot;, nullable = false, length = 64)
+    private String lastHash;
+
+<span class="fc" id="L36">    protected ChainHead() {</span>
+<span class="fc" id="L37">    }</span>
+
+<span class="fc" id="L39">    public ChainHead(String tenantId, long lastIndex, String lastHash) {</span>
+<span class="fc" id="L40">        this.tenantId = tenantId;</span>
+<span class="fc" id="L41">        this.lastIndex = lastIndex;</span>
+<span class="fc" id="L42">        this.lastHash = lastHash;</span>
+<span class="fc" id="L43">    }</span>
+
+<span class="nc" id="L45">    public String getTenantId() { return tenantId; }</span>
+<span class="fc" id="L46">    public long getLastIndex() { return lastIndex; }</span>
+<span class="fc" id="L47">    public String getLastHash() { return lastHash; }</span>
+
+    public void advance(long index, String hash) {
+<span class="fc" id="L50">        this.lastIndex = index;</span>
+<span class="fc" id="L51">        this.lastHash = hash;</span>
+<span class="fc" id="L52">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

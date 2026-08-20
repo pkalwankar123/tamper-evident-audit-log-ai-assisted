@@ -1,0 +1,22 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.ServiceLayerAuthorizationTest
+-------------------------------------------------------------------------------
+Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.666 s -- in com.example.audit.ServiceLayerAuthorizationTest
+com.example.audit.ServiceLayerAuthorizationTest.checkpointsAreAdminOnly -- Time elapsed: 0.123 s
+com.example.audit.ServiceLayerAuthorizationTest.adminSeesOwnTenantOnly -- Time elapsed: 0.131 s
+com.example.audit.ServiceLayerAuthorizationTest.unfilteredQueryIsPinnedToOwnActor -- Time elapsed: 0.089 s
+com.example.audit.ServiceLayerAuthorizationTest.nonAdminCannotExport -- Time elapsed: 0.148 s
+com.example.audit.ServiceLayerAuthorizationTest.crossTenantRedactIsDenied -- Time elapsed: 0.117 s
+com.example.audit.ServiceLayerAuthorizationTest.nonAdminCannotRedact -- Time elapsed: 0.050 s
+com.example.audit.ServiceLayerAuthorizationTest.crossTenantFetchByIdIsDenied -- Time elapsed: 0.060 s
+com.example.audit.ServiceLayerAuthorizationTest.verifyIsTenantScoped -- Time elapsed: 0.209 s
+com.example.audit.ServiceLayerAuthorizationTest.exportIsTenantScoped -- Time elapsed: 0.054 s
+com.example.audit.ServiceLayerAuthorizationTest.tenantsHaveIndependentChains -- Time elapsed: 0.036 s
+com.example.audit.ServiceLayerAuthorizationTest.tenantBAdminCannotQueryTenantA -- Time elapsed: 0.034 s
+com.example.audit.ServiceLayerAuthorizationTest.archiveIsAdminOnlyAndTenantScoped -- Time elapsed: 0.049 s
+com.example.audit.ServiceLayerAuthorizationTest.crossActorFetchByIdIsDenied -- Time elapsed: 0.032 s
+com.example.audit.ServiceLayerAuthorizationTest.actorCannotQueryAnotherActorByFilter -- Time elapsed: 0.033 s
+com.example.audit.ServiceLayerAuthorizationTest.appendDerivesIdentityFromPrincipal -- Time elapsed: 0.095 s
+com.example.audit.ServiceLayerAuthorizationTest.retentionRunIsAdminOnly -- Time elapsed: 0.053 s
+com.example.audit.ServiceLayerAuthorizationTest.checkpointsAreTenantScoped -- Time elapsed: 0.059 s
+com.example.audit.ServiceLayerAuthorizationTest.redactionActorComesFromPrincipal -- Time elapsed: 0.065 s

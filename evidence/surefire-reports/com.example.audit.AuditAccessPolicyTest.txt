@@ -1,0 +1,15 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.AuditAccessPolicyTest
+-------------------------------------------------------------------------------
+Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.193 s -- in com.example.audit.AuditAccessPolicyTest
+com.example.audit.AuditAccessPolicyTest.recordAccessChecksTenantThenOwnership -- Time elapsed: 0.008 s
+com.example.audit.AuditAccessPolicyTest.tenantIsolationAppliesToAdmins -- Time elapsed: 0.006 s
+com.example.audit.AuditAccessPolicyTest.configuredBindingResolves -- Time elapsed: 0.058 s
+com.example.audit.AuditAccessPolicyTest.otherActorFilterIsDenied -- Time elapsed: 0.003 s
+com.example.audit.AuditAccessPolicyTest.ownActorFilterIsAllowed -- Time elapsed: 0.003 s
+com.example.audit.AuditAccessPolicyTest.unfilteredQueryIsPinned -- Time elapsed: 0.003 s
+com.example.audit.AuditAccessPolicyTest.unboundPrincipalIsDenied -- Time elapsed: 0.005 s
+com.example.audit.AuditAccessPolicyTest.partialBindingIsDenied -- Time elapsed: 0.003 s
+com.example.audit.AuditAccessPolicyTest.adminMayQueryAnyActor -- Time elapsed: 0.013 s
+com.example.audit.AuditAccessPolicyTest.nullAuthenticationIsDenied -- Time elapsed: 0.013 s
+com.example.audit.AuditAccessPolicyTest.adminOnlyOperationsRejectNonAdmins -- Time elapsed: 0.009 s

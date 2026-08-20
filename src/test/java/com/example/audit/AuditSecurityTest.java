@@ -43,15 +43,18 @@ class AuditSecurityTest {
     @Autowired MockMvc mvc;
 
     private static RequestPostProcessor asWriter() {
-        return SecurityMockMvcRequestPostProcessors.httpBasic("writer", "writer-dev-pass");
+        return SecurityMockMvcRequestPostProcessors.httpBasic(
+                "writer", "test-writer-password");
     }
 
     private static RequestPostProcessor asReader() {
-        return SecurityMockMvcRequestPostProcessors.httpBasic("reader", "reader-dev-pass");
+        return SecurityMockMvcRequestPostProcessors.httpBasic(
+                "reader", "test-reader-password");
     }
 
     private static RequestPostProcessor asAdmin() {
-        return SecurityMockMvcRequestPostProcessors.httpBasic("admin", "admin-dev-pass");
+        return SecurityMockMvcRequestPostProcessors.httpBasic(
+                "admin", "test-admin-password");
     }
 
     // ---------------------------------------------------------------------
@@ -182,12 +185,22 @@ class AuditSecurityTest {
 
     @Test
     void adminCanExport() throws Exception {
-        mvc.perform(post("/audit").with(asAdmin()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"eventType\":\"X\",\"actorId\":\"export-actor\",\"resourceType\":\"T\","
-                                + "\"resourceId\":\"1\",\"payload\":{}}"))
+        mvc.perform(post("/audit")
+                .with(asAdmin())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "eventType": "X",
+                      "resourceType": "T",
+                      "resourceId": "1",
+                      "payload": {}
+                    }
+                    """))
                 .andExpect(status().isCreated());
 
-        mvc.perform(get("/audit/export").with(asAdmin()).param("actorId", "export-actor"))
+        mvc.perform(get("/audit/export")
+                .with(asAdmin())
+                .param("actorId", "admin-a"))
                 .andExpect(status().isOk());
     }
 

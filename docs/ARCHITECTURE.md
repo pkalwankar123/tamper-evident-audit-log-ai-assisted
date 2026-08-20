@@ -2,74 +2,136 @@
 
 ## Components
 
-- `AuditController`: HTTP boundary for append, query, verify, redact, and export.
-- `AuditService`: append serialization, canonical hashing, filtering, redaction, archival, and verification.
-- `ExportService`: builds a contiguous chain segment and signs its manifest.
-- `RetentionService`: scheduled soft archival based on configurable age.
-- `SecurityConfig`: HTTP Basic authentication and role-based authorization (see below).
-- JPA repositories: H2 for local execution and PostgreSQL profile for realistic deployment.
-
-## Authentication & authorization
-
-Every `/audit/**` endpoint requires HTTP Basic credentials, enforced by a Spring Security
-`SecurityFilterChain` (`SecurityConfig`) that matches on HTTP method and path before any
-controller code runs. Three disjoint roles keep the boundary explicit:
-
-| Role | Access |
+| Component | Responsibility |
 |---|---|
-| `ROLE_AUDIT_WRITER` | `POST /audit` only |
-| `ROLE_AUDIT_READER` | `GET /audit`, `GET /audit/verify` |
-| `ROLE_AUDIT_ADMIN` | Everything, including `POST /audit/{id}/redact` and `GET /audit/export` |
+| `AuditController` | HTTP boundary. Resolves the caller's identity and delegates; holds no authorization logic of its own beyond pagination validation. |
+| `ActorResolver` | Derives `AuthenticatedActor(username, actorId, tenantId, admin)` from token claims or the principal binding table. The only source of identity. |
+| `AuditAccessPolicy` | The single place where "may this actor touch this data" is decided. Called from the services. |
+| `AuditService` | Query, redaction, verification, archival. Consults the policy before touching data. |
+| `AuditAppender` | The one transactional unit that extends a chain by one record. |
+| `ChainHeadService` | Bootstraps the per-tenant chain-head row that appends lock against. |
+| `CheckpointService` | Creates and lists signed chain checkpoints. |
+| `ExportService` / `ExportCanonicalForm` / `ExportVerifier` | Builds, canonicalizes and independently verifies evidence bundles. |
+| `SigningService` / `SigningKeyStore` | Ed25519 signing and verification over a pluggable, durable key backend. |
+| `RetentionService` | Scheduled and on-demand archival. |
+| `RateLimitFilter` / `RequestSizeLimitFilter` | Per-principal rate limiting; pre-parse request size rejection. |
+| `ProductionSecurityValidator` | Startup gate for the `prod` profile. |
 
-Redaction and export require `ROLE_AUDIT_ADMIN` specifically rather than falling back to
-read access, because both produce privacy-affecting or evidentiary output - being able to
-*view* a record does not imply authority to redact or export it. Roles are deliberately
-kept disjoint (not hierarchical) so the authorization tests demonstrate real separation of
-duties: `admin` is granted all three authorities explicitly, rather than reader/writer
-being subsets implied by a role hierarchy.
+## Why authorization lives in the service layer
 
-Users are held in an `InMemoryUserDetailsManager` with BCrypt-hashed dev-only default
-passwords, overridable via `AUDIT_SECURITY_WRITER_PASSWORD` / `_READER_PASSWORD` /
-`_ADMIN_PASSWORD` environment variables - the same override pattern already used for the
-Ed25519 signing keys. Sessions are stateless (`SessionCreationPolicy.STATELESS`, no cookie
-is issued) and CSRF protection is disabled, since CSRF defends session/cookie-based flows
-that do not apply to a per-request Basic-authenticated REST API. `/v3/api-docs/**` and
-`/swagger-ui/**` remain public for local/demo convenience.
+Role matchers in `SecurityConfig` answer "may this role reach this endpoint". They cannot
+answer "whose data is this", because that depends on the record being touched. Putting
+ownership and tenant checks in `AuditAccessPolicy`, invoked from the services, means the
+guarantee holds for any caller - a future controller, a scheduled job, a message consumer
+- and it makes the rules testable without HTTP. `ServiceLayerAuthorizationTest` drives
+the services directly for exactly that reason.
 
-This authenticates and authorizes API access; it is not an identity platform. See
-`docs/RISKS_AND_TRADEOFFS.md` for what is out of scope (external IdP, MFA, secrets
-management, key rotation, auditing of auth failures themselves).
+## Data model
 
-## Main-chain design
+| Table | Purpose |
+|---|---|
+| `audit_records` | The chain. Unique on `(tenant_id, chain_index)`. |
+| `redaction_entries` | Hash-linked ledger of payload transitions, one chain per record. |
+| `chain_heads` | One row per tenant. The append serialization point and the current head pointer. |
+| `chain_checkpoints` | Signed commitments to `(chain_index, record_hash)`. |
+| `idempotency_records` | Durable replay protection. Unique on `(tenant_id, idempotency_key)`. |
 
-Each event stores `chainIndex`, immutable event fields, `payloadCommitment`, `previousHash`, and `recordHash`.
+## Chain design
 
-`payloadCommitment = SHA-256(canonical original payload JSON)`
+Chains are **partitioned per tenant**. A shared global chain cannot support a
+tenant-scoped verification: the verifier would see a gap wherever another tenant's
+records were filtered out, and reporting tampering for correct data is worse than not
+verifying at all. Partitioning along the same boundary the authorization model already
+uses keeps both coherent.
 
-`recordHash = SHA-256(chainIndex | event fields | timestamp | ingestedAt | payloadCommitment | previousHash)`
+Each record stores:
 
-The genesis predecessor is 64 zeroes. JSON is serialized with ordered map keys before hashing. SHA-256 was selected for broad platform support and collision resistance. Hashing provides tamper evidence, not authentication; database controls and external anchors are still required.
+```
+payloadCommitment = SHA-256(canonical payload JSON)
+recordHash        = SHA-256(tenantId | chainIndex | eventType | actorId | resourceType
+                            | resourceId | timestamp | ingestedAt | payloadCommitment
+                            | previousHash)
+```
+
+The genesis predecessor is 64 zeroes. JSON is serialized with ordered map keys before
+hashing. SHA-256 was chosen for broad platform support and collision resistance.
+
+Hashing provides tamper *evidence*, not authentication or prevention. Database access
+controls, restricted roles and external anchoring are still required.
+
+## Append serialization
+
+Every append takes a `PESSIMISTIC_WRITE` lock on the tenant's `chain_heads` row and
+advances the head **inside the same transaction** that inserts the record.
+
+This replaced a JVM `synchronized` block plus a `lockTail()` query, which was inadequate
+in three distinct ways:
+
+1. It served no purpose across nodes - a second JVM shared no monitor.
+2. Spring wraps the method in a transactional proxy, so the monitor was released before
+   commit; even single-node writers could interleave between hash computation and commit.
+3. On an empty table there was no tail row to lock, so the very first concurrent appends
+   raced with nothing preventing them.
+
+Because the head advances transactionally, a rolled-back append consumes no index and
+leaves no gap - the property `AppendRollbackTest` asserts.
+
+The chain-head row is created in its own `REQUIRES_NEW` transaction, with the
+duplicate-key failure caught *outside* that transaction. Catching it inside leaves the
+transaction rollback-only and throws at commit, which is precisely how the first version
+of this code failed under concurrency.
 
 ## Redaction design
 
-The visible `payload_json` may change only through the redaction API. The immutable main-chain record continues to commit to the original payload. Each redaction entry contains the record ID, JSON Pointer, reason, approving actor, prior payload hash, new payload hash, predecessor redaction-entry hash, and its own hash.
+`payload_json` may change only through the redaction API. The immutable chain record
+continues to commit to the *original* payload. Each ledger entry records the record id,
+JSON Pointer, reason, the actor derived from the principal, prior payload hash, new
+payload hash, predecessor entry hash, and its own hash.
 
-Verification checks:
+Verification checks, in order: the main chain; every redaction transition and ledger
+link; and that the current payload hash equals the latest authorized redaction result.
 
-1. The immutable main chain.
-2. Every redaction transition and ledger link.
-3. The current payload hash equals the latest approved redaction result.
+This removes sensitive cleartext from the active row while retaining evidence that the
+record originally committed to some value. It does **not** remove copies from backups,
+database logs, caches, or bundles exported earlier.
 
-This removes the sensitive cleartext from the active row while retaining evidence that the record originally committed to some value. It does not remove copies from backups, database logs, caches, or prior exports.
+## Checkpoints
+
+Link checking is satisfied by any internally consistent chain, including one an attacker
+rebuilt after deleting records - every remaining link verifies, and the evidence is
+quietly gone. A checkpoint signs `(tenantId, chainIndex, recordHash, createdAt)`, giving
+verification an anchor outside the data it is checking. Verification reports
+`CHECKPOINT_MISSING_RECORDS` for truncation, `CHECKPOINT_MISMATCH` for a rewrite, and
+`CHECKPOINT_SIGNATURE_INVALID` for a forged checkpoint.
+
+Checkpoints are stored in the same database as the chain, which bounds what they can
+prove: an attacker with full write access can delete the checkpoints too. Anchoring them
+externally is the production step.
 
 ## Retention
 
-Retention sets `archived=true`; it does not delete chain material. Normal queries exclude archived events unless `includeArchived=true`. Verification always includes them. A production archive tier could move rows while retaining ordered proof records or immutable checkpoints.
+Archival sets `archived=true` and touches no hashed field, so archived records still
+verify and still export. Queries exclude them unless `includeArchived=true`; verification
+always includes them, because skipping them would leave archived records modifiable
+without detection. No path deletes an audit record.
 
 ## Export
 
-Exports contain the entire contiguous chain segment from the first to last matching event. Nonmatching records inside the segment are included as proof records with `selected=false`. The manifest hash is signed with Ed25519. Recipients verify the signature against a public key obtained from a trusted channel, then recompute the manifest and chain hashes.
+A bundle spans the contiguous chain-index range covering the selection. Non-matching
+records inside that range are included with `selected=false` - not padding, but the
+material a recipient needs to check the hash links between the selected records. Each
+record carries its redaction ledger so payload-versus-commitment differences can be
+explained offline.
 
-## Data integrity and concurrency
+`ExportCanonicalForm` defines the signed bytes as an explicit line-oriented format. The
+earlier approach hashed a Jackson serialization, which is not independently reproducible:
+a recipient would have to replicate one serializer's field ordering, null handling and
+date format exactly. `ExportVerifier` implements the recipient side and touches no
+database.
 
-The append path uses a JVM synchronized section and a pessimistic lock on the current tail. This is suitable for the single-node prototype. It is not sufficient for horizontally scaled writers; see the risk register.
+## Key management
+
+`SigningKeyStore` abstracts the backend so a KMS/HSM, an injected secret and a durable
+local file are interchangeable. Selection order is configured keys → file store →
+explicit ephemeral, and startup fails if none is present. Signatures name their key id,
+so rotation retires a key without invalidating evidence signed under it.

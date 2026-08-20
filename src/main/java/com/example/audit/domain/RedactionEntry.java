@@ -18,6 +18,9 @@ public class RedactionEntry {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "tenant_id", nullable = false, updatable = false, length = 200)
+    private String tenantId;
+
     @Column(name = "record_id", nullable = false, updatable = false)
     private UUID recordId;
 
@@ -51,9 +54,10 @@ public class RedactionEntry {
     protected RedactionEntry() {
     }
 
-    public RedactionEntry(UUID recordId, long sequenceNumber, String fieldPath, String reason, String actorId,
+    public RedactionEntry(String tenantId, UUID recordId, long sequenceNumber, String fieldPath, String reason, String actorId,
                           Instant createdAt, String previousPayloadHash, String newPayloadHash,
                           String previousEntryHash, String entryHash) {
+        this.tenantId = tenantId;
         this.recordId = recordId;
         this.sequenceNumber = sequenceNumber;
         this.fieldPath = fieldPath;
@@ -67,6 +71,7 @@ public class RedactionEntry {
     }
 
     public UUID getId() { return id; }
+    public String getTenantId() { return tenantId; }
     public UUID getRecordId() { return recordId; }
     public long getSequenceNumber() { return sequenceNumber; }
     public String getFieldPath() { return fieldPath; }

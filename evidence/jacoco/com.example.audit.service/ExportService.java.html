@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExportService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">ExportService.java</span></div><h1>ExportService.java</h1><pre class="source lang-java linenums">package com.example.audit.service;
+
+import com.example.audit.api.ApiModels;
+import com.example.audit.domain.AuditRecord;
+import com.example.audit.security.AuditAccessPolicy;
+import com.example.audit.security.AuthenticatedActor;
+import com.example.audit.util.Hashing;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Produces a signed, self-contained evidence bundle.
+ *
+ * &lt;p&gt;Ownership rules are the same as everywhere else and are applied here, not only at
+ * the controller: export requires {@code ROLE_AUDIT_ADMIN}, and the selection is
+ * confined to the caller's own tenant. Asking to export another tenant is not an empty
+ * result, it is a denial.
+ *
+ * &lt;p&gt;The bundle spans the contiguous chain-index range covering the selection, with
+ * non-matching records inside that range included and flagged {@code selected=false}.
+ * That is not padding: without the intervening records a recipient cannot check the
+ * hash links between the selected ones, and the chain evidence would be unverifiable.
+ * Each record carries its redaction ledger, so payload-vs-commitment differences can be
+ * explained offline rather than taken on trust.
+ */
+@Service
+public class ExportService {
+    private static final String BUNDLE_VERSION = &quot;2.0&quot;;
+
+    private final AuditService auditService;
+    private final SigningService signingService;
+    private final AuditAccessPolicy accessPolicy;
+
+<span class="fc" id="L41">    public ExportService(AuditService auditService, SigningService signingService,</span>
+                         AuditAccessPolicy accessPolicy) {
+<span class="fc" id="L43">        this.auditService = auditService;</span>
+<span class="fc" id="L44">        this.signingService = signingService;</span>
+<span class="fc" id="L45">        this.accessPolicy = accessPolicy;</span>
+<span class="fc" id="L46">    }</span>
+
+    @Transactional(readOnly = true)
+    public ApiModels.ExportManifest export(AuthenticatedActor actor, String actorId, String resourceId) {
+<span class="fc" id="L50">        accessPolicy.requireAdmin(actor, &quot;export an audit bundle&quot;);</span>
+<span class="fc bfc" id="L51" title="All 6 branches covered.">        if ((actorId == null) == (resourceId == null)) {</span>
+<span class="fc" id="L52">            throw new IllegalArgumentException(&quot;Provide exactly one of actorId or resourceId&quot;);</span>
+        }
+
+<span class="fc" id="L55">        List&lt;AuditRecord&gt; all = auditService.tenantRecords(actor);</span>
+<span class="fc" id="L56">        List&lt;AuditRecord&gt; selected = all.stream()</span>
+<span class="pc bpc" id="L57" title="1 of 2 branches missed.">                .filter(record -&gt; actorId != null</span>
+<span class="fc" id="L58">                        ? actorId.equals(record.getActorId())</span>
+<span class="pc" id="L59">                        : resourceId.equals(record.getResourceId()))</span>
+<span class="fc" id="L60">                .toList();</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (selected.isEmpty()) {</span>
+<span class="fc" id="L62">            throw new java.util.NoSuchElementException(</span>
+<span class="fc" id="L63">                    &quot;No records in tenant '&quot; + actor.tenantId() + &quot;' matched the export selection&quot;);</span>
+        }
+
+<span class="fc" id="L66">        long min = selected.get(0).getChainIndex();</span>
+<span class="fc" id="L67">        long max = selected.get(selected.size() - 1).getChainIndex();</span>
+<span class="fc" id="L68">        Set&lt;UUID&gt; selectedIds = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L69">        selected.forEach(record -&gt; selectedIds.add(record.getId()));</span>
+
+<span class="fc" id="L71">        List&lt;ApiModels.ExportRecord&gt; segment = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        for (AuditRecord record : all) {</span>
+<span class="pc bpc" id="L73" title="2 of 4 branches missed.">            if (record.getChainIndex() &gt;= min &amp;&amp; record.getChainIndex() &lt;= max) {</span>
+<span class="fc" id="L74">                segment.add(new ApiModels.ExportRecord(auditService.toResponse(record),</span>
+<span class="fc" id="L75">                        selectedIds.contains(record.getId()), auditService.redactionViews(record.getId())));</span>
+            }
+        }
+
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        String selectionType = actorId != null ? &quot;actorId&quot; : &quot;resourceId&quot;;</span>
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">        String selectionValue = actorId != null ? actorId : resourceId;</span>
+<span class="fc" id="L81">        Instant generatedAt = Instant.now();</span>
+<span class="fc" id="L82">        String keyId = signingService.keyId();</span>
+<span class="fc" id="L83">        String canonical = ExportCanonicalForm.serialize(BUNDLE_VERSION, generatedAt, actor.tenantId(),</span>
+<span class="fc" id="L84">                selectionType, selectionValue, keyId, segment);</span>
+<span class="fc" id="L85">        String manifestHash = Hashing.sha256(canonical);</span>
+<span class="fc" id="L86">        return new ApiModels.ExportManifest(BUNDLE_VERSION, generatedAt, actor.tenantId(), selectionType,</span>
+<span class="fc" id="L87">                selectionValue, keyId, signingService.publicKeyBase64(), manifestHash,</span>
+<span class="fc" id="L88">                signingService.sign(manifestHash), segment);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

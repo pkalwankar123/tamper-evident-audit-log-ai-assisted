@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExportVerifier.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">ExportVerifier.java</span></div><h1>ExportVerifier.java</h1><pre class="source lang-java linenums"><span class="fc" id="L1">package com.example.audit.service;</span>
+
+import com.example.audit.api.ApiModels;
+import com.example.audit.util.CanonicalJson;
+import com.example.audit.util.Hashing;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+
+/**
+ * Verifies an export bundle using nothing but the bundle itself and a trusted public
+ * key.
+ *
+ * &lt;p&gt;This is the piece that makes &quot;independently verifiable&quot; a real claim rather than a
+ * documentation sentence. It deliberately does not touch the database, the repositories
+ * or any service state - it takes a parsed manifest and re-derives every integrity
+ * claim from the values printed in it. A recipient can run exactly this code against a
+ * bundle handed to them on a USB stick.
+ *
+ * &lt;p&gt;Five independent checks:
+ * &lt;ol&gt;
+ *   &lt;li&gt;each record's {@code recordHash} recomputes from its own fields;&lt;/li&gt;
+ *   &lt;li&gt;consecutive records link ({@code previousHash} matches the predecessor);&lt;/li&gt;
+ *   &lt;li&gt;each payload matches its commitment, either directly or through a fully
+ *       replayed redaction ledger;&lt;/li&gt;
+ *   &lt;li&gt;the manifest hash recomputes from the canonical form;&lt;/li&gt;
+ *   &lt;li&gt;the Ed25519 signature over that hash validates under the supplied key.&lt;/li&gt;
+ * &lt;/ol&gt;
+ *
+ * &lt;p&gt;Passing the bundle's own embedded public key to {@link #verify} proves internal
+ * consistency only. Real assurance comes from passing a key obtained out of band, which
+ * is why {@link #verifyAgainstTrustedKey} exists as a separate entry point.
+ */
+public final class ExportVerifier {
+    private final CanonicalJson canonicalJson;
+
+<span class="fc" id="L43">    public ExportVerifier(ObjectMapper objectMapper) {</span>
+<span class="fc" id="L44">        this.canonicalJson = new CanonicalJson(objectMapper);</span>
+<span class="fc" id="L45">    }</span>
+
+    public record Result(boolean valid, List&lt;String&gt; problems) {
+        public static Result of(List&lt;String&gt; problems) {
+<span class="fc" id="L49">            return new Result(problems.isEmpty(), List.copyOf(problems));</span>
+        }
+    }
+
+    /** Verifies using the public key embedded in the bundle (self-consistency check). */
+    public Result verify(ApiModels.ExportManifest manifest) {
+<span class="fc" id="L55">        return verifyAgainstTrustedKey(manifest, manifest.publicKeyBase64());</span>
+    }
+
+    /** Verifies using a public key the recipient already trusts. */
+    public Result verifyAgainstTrustedKey(ApiModels.ExportManifest manifest, String trustedPublicKeyBase64) {
+<span class="fc" id="L60">        List&lt;String&gt; problems = new ArrayList&lt;&gt;();</span>
+
+<span class="pc bpc" id="L62" title="2 of 4 branches missed.">        if (trustedPublicKeyBase64 == null || trustedPublicKeyBase64.isBlank()) {</span>
+<span class="nc" id="L63">            problems.add(&quot;No public key supplied to verify against&quot;);</span>
+<span class="pc bfc" id="L64" title="All 2 branches covered.">        } else if (!trustedPublicKeyBase64.equals(manifest.publicKeyBase64())) {</span>
+<span class="fc" id="L65">            problems.add(&quot;Bundle was signed with key id '&quot; + manifest.keyId()</span>
+                    + &quot;', whose public key does not match the trusted key supplied&quot;);
+        }
+
+<span class="fc" id="L69">        verifyRecords(manifest, problems);</span>
+<span class="fc" id="L70">        verifyManifestHashAndSignature(manifest, trustedPublicKeyBase64, problems);</span>
+<span class="fc" id="L71">        return Result.of(problems);</span>
+    }
+
+    private void verifyRecords(ApiModels.ExportManifest manifest, List&lt;String&gt; problems) {
+<span class="fc" id="L75">        String expectedPrevious = null;</span>
+<span class="fc" id="L76">        long expectedIndex = -1;</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        for (ApiModels.ExportRecord entry : manifest.records()) {</span>
+<span class="fc" id="L78">            ApiModels.AuditEventResponse event = entry.event();</span>
+
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">            if (!manifest.tenantId().equals(event.tenantId())) {</span>
+<span class="nc" id="L81">                problems.add(&quot;Record at index &quot; + event.chainIndex() + &quot; belongs to tenant '&quot;</span>
+<span class="nc" id="L82">                        + event.tenantId() + &quot;', not the bundle tenant '&quot; + manifest.tenantId() + &quot;'&quot;);</span>
+            }
+
+<span class="fc" id="L85">            String recomputed = AuditService.calculateRecordHash(event.tenantId(), event.chainIndex(),</span>
+<span class="fc" id="L86">                    event.eventType(), event.actorId(), event.resourceType(), event.resourceId(),</span>
+<span class="fc" id="L87">                    event.timestamp(), event.ingestedAt(), event.payloadCommitment(), event.previousHash());</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">            if (!recomputed.equals(event.recordHash())) {</span>
+<span class="fc" id="L89">                problems.add(&quot;Record hash mismatch at chain index &quot; + event.chainIndex());</span>
+            }
+
+<span class="fc bfc" id="L92" title="All 2 branches covered.">            if (expectedPrevious != null) {</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">                if (event.chainIndex() != expectedIndex + 1) {</span>
+<span class="fc" id="L94">                    problems.add(&quot;Chain index gap: expected &quot; + (expectedIndex + 1)</span>
+<span class="fc" id="L95">                            + &quot; but the bundle continues at &quot; + event.chainIndex());</span>
+                }
+<span class="fc bfc" id="L97" title="All 2 branches covered.">                if (!expectedPrevious.equals(event.previousHash())) {</span>
+<span class="fc" id="L98">                    problems.add(&quot;Broken chain link at index &quot; + event.chainIndex()</span>
+                            + &quot;: previousHash does not match the preceding record&quot;);
+                }
+            }
+<span class="fc" id="L102">            expectedPrevious = event.recordHash();</span>
+<span class="fc" id="L103">            expectedIndex = event.chainIndex();</span>
+
+<span class="fc" id="L105">            verifyPayload(entry, problems);</span>
+        }
+<span class="fc" id="L107">    }</span>
+
+    private void verifyPayload(ApiModels.ExportRecord entry, List&lt;String&gt; problems) {
+<span class="fc" id="L110">        ApiModels.AuditEventResponse event = entry.event();</span>
+<span class="fc" id="L111">        String currentPayloadHash = Hashing.sha256(canonicalJson.write(event.payload()));</span>
+<span class="fc" id="L112">        List&lt;ApiModels.RedactionEntryView&gt; ledger = entry.redactions();</span>
+
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        if (ledger.isEmpty()) {</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">            if (!currentPayloadHash.equals(event.payloadCommitment())) {</span>
+<span class="fc" id="L116">                problems.add(&quot;Payload at index &quot; + event.chainIndex()</span>
+                        + &quot; does not match its commitment and no redaction explains the difference&quot;);
+            }
+<span class="fc" id="L119">            return;</span>
+        }
+
+<span class="fc" id="L122">        String expectedPayloadHash = event.payloadCommitment();</span>
+<span class="fc" id="L123">        String expectedPreviousEntry = AuditService.GENESIS_HASH;</span>
+<span class="fc" id="L124">        long expectedSequence = 1;</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        for (ApiModels.RedactionEntryView redaction : ledger) {</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">            if (redaction.sequenceNumber() != expectedSequence) {</span>
+<span class="nc" id="L127">                problems.add(&quot;Redaction sequence is not contiguous at index &quot; + event.chainIndex());</span>
+<span class="nc" id="L128">                return;</span>
+            }
+<span class="pc bpc" id="L130" title="1 of 2 branches missed.">            if (!redaction.previousEntryHash().equals(expectedPreviousEntry)) {</span>
+<span class="nc" id="L131">                problems.add(&quot;Redaction ledger link is invalid at index &quot; + event.chainIndex());</span>
+<span class="nc" id="L132">                return;</span>
+            }
+<span class="pc bpc" id="L134" title="1 of 2 branches missed.">            if (!redaction.previousPayloadHash().equals(expectedPayloadHash)) {</span>
+<span class="nc" id="L135">                problems.add(&quot;Redaction payload transition is invalid at index &quot; + event.chainIndex());</span>
+<span class="nc" id="L136">                return;</span>
+            }
+<span class="fc" id="L138">            String recomputed = AuditService.calculateRedactionHash(event.id(), redaction.sequenceNumber(),</span>
+<span class="fc" id="L139">                    redaction.fieldPath(), redaction.reason(), redaction.actorId(), redaction.createdAt(),</span>
+<span class="fc" id="L140">                    redaction.previousPayloadHash(), redaction.newPayloadHash(), redaction.previousEntryHash());</span>
+<span class="pc bpc" id="L141" title="1 of 2 branches missed.">            if (!recomputed.equals(redaction.entryHash())) {</span>
+<span class="nc" id="L142">                problems.add(&quot;Redaction entry hash is invalid at index &quot; + event.chainIndex());</span>
+<span class="nc" id="L143">                return;</span>
+            }
+<span class="fc" id="L145">            expectedPayloadHash = redaction.newPayloadHash();</span>
+<span class="fc" id="L146">            expectedPreviousEntry = redaction.entryHash();</span>
+<span class="fc" id="L147">            expectedSequence++;</span>
+        }
+<span class="pc bpc" id="L149" title="1 of 2 branches missed.">        if (!currentPayloadHash.equals(expectedPayloadHash)) {</span>
+<span class="nc" id="L150">            problems.add(&quot;Payload at index &quot; + event.chainIndex()</span>
+                    + &quot; does not match the latest authorized redaction&quot;);
+        }
+<span class="fc" id="L153">    }</span>
+
+    private void verifyManifestHashAndSignature(ApiModels.ExportManifest manifest, String publicKeyBase64,
+                                                List&lt;String&gt; problems) {
+<span class="fc" id="L157">        String canonical = ExportCanonicalForm.serialize(manifest.bundleVersion(), manifest.generatedAt(),</span>
+<span class="fc" id="L158">                manifest.tenantId(), manifest.selectionType(), manifest.selectionValue(), manifest.keyId(),</span>
+<span class="fc" id="L159">                manifest.records());</span>
+<span class="fc" id="L160">        String recomputed = Hashing.sha256(canonical);</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">        if (!recomputed.equals(manifest.manifestHash())) {</span>
+<span class="fc" id="L162">            problems.add(&quot;Manifest hash does not match the canonical form of the bundle contents&quot;);</span>
+        }
+<span class="pc bpc" id="L164" title="2 of 4 branches missed.">        if (publicKeyBase64 == null || publicKeyBase64.isBlank()) {</span>
+<span class="nc" id="L165">            return;</span>
+        }
+        try {
+<span class="fc" id="L168">            PublicKey publicKey = KeyFactory.getInstance(&quot;Ed25519&quot;)</span>
+<span class="fc" id="L169">                    .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyBase64)));</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">            if (!SigningService.verifyWith(publicKey, manifest.manifestHash(), manifest.signatureBase64())) {</span>
+<span class="fc" id="L171">                problems.add(&quot;Ed25519 signature over the manifest hash is not valid for the supplied key&quot;);</span>
+            }
+<span class="pc" id="L173">        } catch (GeneralSecurityException | IllegalArgumentException exception) {</span>
+<span class="nc" id="L174">            problems.add(&quot;Supplied public key is unusable: &quot; + exception.getMessage());</span>
+        }
+<span class="fc" id="L176">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

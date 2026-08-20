@@ -1,0 +1,10 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.CheckpointIntegrityTest
+-------------------------------------------------------------------------------
+Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.742 s -- in com.example.audit.CheckpointIntegrityTest
+com.example.audit.CheckpointIntegrityTest.appendingAfterACheckpointStillVerifies -- Time elapsed: 0.985 s
+com.example.audit.CheckpointIntegrityTest.checkpointOverAnIntactChainVerifies -- Time elapsed: 0.939 s
+com.example.audit.CheckpointIntegrityTest.truncationIsCaughtOnlyByTheCheckpoint -- Time elapsed: 1.066 s
+com.example.audit.CheckpointIntegrityTest.checkpointOnAnEmptyChainIsRejected -- Time elapsed: 0.399 s
+com.example.audit.CheckpointIntegrityTest.forgedCheckpointIsRejected -- Time elapsed: 0.592 s
+com.example.audit.CheckpointIntegrityTest.rewrittenHistoryFailsTheCheckpoint -- Time elapsed: 0.675 s

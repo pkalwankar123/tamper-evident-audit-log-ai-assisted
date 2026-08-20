@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RateLimitFilter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.security</a> &gt; <span class="el_source">RateLimitFilter.java</span></div><h1>RateLimitFilter.java</h1><pre class="source lang-java linenums">package com.example.audit.security;
+
+import com.example.audit.config.AuditProperties;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Minimal fixed-window rate limiter, keyed by authenticated principal (falls back to
+ * remote address for unauthenticated requests, e.g. repeated failed logins). In-memory
+ * only - resets on restart and does not share state across nodes; adequate to
+ * demonstrate abuse protection for a single-node prototype, NOT a production rate
+ * limiter (see docs/RISKS_AND_TRADEOFFS.md for the production alternative: a shared
+ * store such as Redis, or an API gateway / ingress-level limiter).
+ *
+ * &lt;p&gt;&lt;b&gt;Not a {@code @Component}/auto-registered filter on purpose:&lt;/b&gt; it must run
+ * AFTER Spring Security's authentication filter so {@code SecurityContextHolder} is
+ * already populated when it reads the principal - see
+ * {@code SecurityConfig#filterChain}, which wires it in explicitly via
+ * {@code addFilterAfter(..., BasicAuthenticationFilter.class)}. Letting Spring Boot
+ * auto-register this as a generic servlet filter would run it too early, before
+ * authentication, and it would silently fall back to IP-only limiting for every
+ * request regardless of who is logged in.
+ */
+public class RateLimitFilter extends OncePerRequestFilter {
+    private final AuditProperties properties;
+<span class="fc" id="L37">    private final Map&lt;String, Window&gt; windows = new ConcurrentHashMap&lt;&gt;();</span>
+
+<span class="fc" id="L39">    public RateLimitFilter(AuditProperties properties) {</span>
+<span class="fc" id="L40">        this.properties = properties;</span>
+<span class="fc" id="L41">    }</span>
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+<span class="pc bpc" id="L46" title="1 of 2 branches missed.">        if (!properties.getRateLimit().isEnabled()) {</span>
+<span class="nc" id="L47">            chain.doFilter(request, response);</span>
+<span class="nc" id="L48">            return;</span>
+        }
+<span class="fc" id="L50">        String key = principalKey(request);</span>
+<span class="fc" id="L51">        long nowMinute = Instant.now().getEpochSecond() / 60;</span>
+<span class="fc" id="L52">        Window window = windows.computeIfAbsent(key, ignored -&gt; new Window(nowMinute));</span>
+
+<span class="fc" id="L54">        synchronized (window) {</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">            if (window.minute != nowMinute) {</span>
+<span class="fc" id="L56">                window.minute = nowMinute;</span>
+<span class="fc" id="L57">                window.count.set(0);</span>
+            }
+<span class="fc bfc" id="L59" title="All 2 branches covered.">            if (window.count.incrementAndGet() &gt; properties.getRateLimit().getRequestsPerMinute()) {</span>
+<span class="fc" id="L60">                response.setStatus(429);</span>
+<span class="fc" id="L61">                response.setContentType(&quot;application/problem+json&quot;);</span>
+<span class="fc" id="L62">                response.getWriter().write(&quot;{\&quot;title\&quot;:\&quot;Too Many Requests\&quot;,\&quot;status\&quot;:429,&quot;</span>
+<span class="fc" id="L63">                        + &quot;\&quot;detail\&quot;:\&quot;Rate limit of &quot; + properties.getRateLimit().getRequestsPerMinute()</span>
+                        + &quot; requests/minute exceeded for this principal\&quot;}&quot;);
+<span class="fc" id="L65">                return;</span>
+            }
+        }
+<span class="fc" id="L68">        chain.doFilter(request, response);</span>
+<span class="fc" id="L69">    }</span>
+
+    private String principalKey(HttpServletRequest request) {
+<span class="fc" id="L72">        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();</span>
+<span class="pc bpc" id="L73" title="1 of 4 branches missed.">        if (authentication != null &amp;&amp; authentication.isAuthenticated()</span>
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">                &amp;&amp; !&quot;anonymousUser&quot;.equals(authentication.getPrincipal())) {</span>
+<span class="fc" id="L75">            return &quot;user:&quot; + authentication.getName();</span>
+        }
+<span class="fc" id="L77">        return &quot;ip:&quot; + request.getRemoteAddr();</span>
+    }
+
+    private static final class Window {
+        private volatile long minute;
+<span class="fc" id="L82">        private final AtomicInteger count = new AtomicInteger();</span>
+<span class="fc" id="L83">        private Window(long minute) { this.minute = minute; }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

@@ -1,0 +1,21 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.AuditSecurityTest
+-------------------------------------------------------------------------------
+Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 58.22 s -- in com.example.audit.AuditSecurityTest
+com.example.audit.AuditSecurityTest.adminCanRedact -- Time elapsed: 5.461 s
+com.example.audit.AuditSecurityTest.writerCannotRedact -- Time elapsed: 4.070 s
+com.example.audit.AuditSecurityTest.writerCanAppend -- Time elapsed: 3.757 s
+com.example.audit.AuditSecurityTest.writerCannotVerify -- Time elapsed: 3.760 s
+com.example.audit.AuditSecurityTest.appendWithoutCredentialsIsRejected -- Time elapsed: 3.098 s
+com.example.audit.AuditSecurityTest.apiDocsAreAccessibleWithoutCredentials -- Time elapsed: 5.946 s
+com.example.audit.AuditSecurityTest.readerCannotAppend -- Time elapsed: 4.901 s
+com.example.audit.AuditSecurityTest.readerCannotExport -- Time elapsed: 3.157 s
+com.example.audit.AuditSecurityTest.swaggerUiIsAccessibleWithoutCredentials -- Time elapsed: 2.679 s
+com.example.audit.AuditSecurityTest.exportWithoutCredentialsIsRejected -- Time elapsed: 2.530 s
+com.example.audit.AuditSecurityTest.readerCannotRedact -- Time elapsed: 3.346 s
+com.example.audit.AuditSecurityTest.verifyWithoutCredentialsIsRejected -- Time elapsed: 2.299 s
+com.example.audit.AuditSecurityTest.queryWithoutCredentialsIsRejected -- Time elapsed: 2.459 s
+com.example.audit.AuditSecurityTest.readerCanQueryAndVerify -- Time elapsed: 2.921 s
+com.example.audit.AuditSecurityTest.redactWithoutCredentialsIsRejected -- Time elapsed: 2.727 s
+com.example.audit.AuditSecurityTest.writerCannotQuery -- Time elapsed: 2.400 s
+com.example.audit.AuditSecurityTest.adminCanExport -- Time elapsed: 2.594 s

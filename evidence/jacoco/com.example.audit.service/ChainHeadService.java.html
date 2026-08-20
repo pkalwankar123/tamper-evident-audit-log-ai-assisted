@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ChainHeadService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">ChainHeadService.java</span></div><h1>ChainHeadService.java</h1><pre class="source lang-java linenums">package com.example.audit.service;
+
+import com.example.audit.domain.ChainHead;
+import com.example.audit.repository.ChainHeadRepository;
+import org.springframework.dao.DataAccessException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Creates the per-tenant chain head row that appends later lock against.
+ *
+ * &lt;p&gt;There is nothing to take a row lock on until the row exists, so it has to be
+ * committed before the first append can serialize against it - which is precisely the
+ * race the old &quot;read the last record&quot; approach could not close on an empty table.
+ *
+ * &lt;p&gt;Note the split between {@link #ensureExists} and {@link Creator#create}. The insert
+ * runs in its own transaction; the duplicate-key failure is caught &lt;em&gt;outside&lt;/em&gt; that
+ * transaction. Catching it inside would leave the transaction marked rollback-only and
+ * turn a successfully-handled race into an {@code UnexpectedRollbackException} at commit
+ * - which is exactly what happened when this was written as a single method, and is why
+ * the concurrency test failed seven times out of eight before the split.
+ */
+@Service
+public class ChainHeadService {
+    private final ChainHeadRepository chainHeads;
+    private final Creator creator;
+
+<span class="fc" id="L29">    public ChainHeadService(ChainHeadRepository chainHeads, Creator creator) {</span>
+<span class="fc" id="L30">        this.chainHeads = chainHeads;</span>
+<span class="fc" id="L31">        this.creator = creator;</span>
+<span class="fc" id="L32">    }</span>
+
+    public void ensureExists(String tenantId) {
+<span class="fc bfc" id="L35" title="All 2 branches covered.">        if (chainHeads.existsById(tenantId)) {</span>
+<span class="fc" id="L36">            return;</span>
+        }
+        try {
+<span class="fc" id="L39">            creator.create(tenantId);</span>
+<span class="fc" id="L40">        } catch (DataAccessException concurrentCreate) {</span>
+            // Another node or thread created it first. The row existing is the only
+            // outcome this method cares about, so a lost race is a success.
+<span class="pc bpc" id="L43" title="1 of 2 branches missed.">            if (!chainHeads.existsById(tenantId)) {</span>
+<span class="nc" id="L44">                throw concurrentCreate;</span>
+            }
+        }
+<span class="fc" id="L47">    }</span>
+
+    /** Separate bean so the transactional proxy applies and commits before the caller resumes. */
+    @Service
+    public static class Creator {
+        private final ChainHeadRepository chainHeads;
+
+<span class="fc" id="L54">        public Creator(ChainHeadRepository chainHeads) {</span>
+<span class="fc" id="L55">            this.chainHeads = chainHeads;</span>
+<span class="fc" id="L56">        }</span>
+
+        @Transactional(propagation = Propagation.REQUIRES_NEW)
+        public void create(String tenantId) {
+<span class="fc" id="L60">            chainHeads.saveAndFlush(new ChainHead(tenantId, 0L, AuditService.GENESIS_HASH));</span>
+<span class="fc" id="L61">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

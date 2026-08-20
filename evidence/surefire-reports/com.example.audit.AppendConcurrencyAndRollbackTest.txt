@@ -1,0 +1,8 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.AppendConcurrencyAndRollbackTest
+-------------------------------------------------------------------------------
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 57.88 s -- in com.example.audit.AppendConcurrencyAndRollbackTest
+com.example.audit.AppendConcurrencyAndRollbackTest.concurrentAppendsProduceAContiguousChain -- Time elapsed: 4.647 s
+com.example.audit.AppendConcurrencyAndRollbackTest.failedAppendConsumesNoIndex -- Time elapsed: 0.556 s
+com.example.audit.AppendConcurrencyAndRollbackTest.failedAppendDoesNotBurnItsIdempotencyKey -- Time elapsed: 0.186 s
+com.example.audit.AppendConcurrencyAndRollbackTest.concurrentAppendsWithTheSameKeyCreateOneRecord -- Time elapsed: 0.263 s

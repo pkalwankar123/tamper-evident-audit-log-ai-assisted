@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RetentionService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">RetentionService.java</span></div><h1>RetentionService.java</h1><pre class="source lang-java linenums">package com.example.audit.service;
+
+import com.example.audit.config.AuditProperties;
+import com.example.audit.domain.ChainHead;
+import com.example.audit.repository.ChainHeadRepository;
+import com.example.audit.security.AuthenticatedActor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+/**
+ * The retention lifecycle.
+ *
+ * &lt;p&gt;Records pass through exactly two states: &lt;b&gt;active&lt;/b&gt; until they are older than
+ * {@code audit.retention.days}, then &lt;b&gt;archived&lt;/b&gt;. Archiving is a soft state change -
+ * the row, its payload, its hashes and its chain links all survive untouched, so an
+ * archived record still verifies and still exports. Nothing in this service deletes an
+ * audit record; hard deletion would break the chain by construction and is not offered.
+ *
+ * &lt;p&gt;Two entry points, with different authorization stories:
+ * &lt;ul&gt;
+ *   &lt;li&gt;the scheduled sweep, gated behind {@code audit.retention.enabled}, running as
+ *       the system across every known tenant;&lt;/li&gt;
+ *   &lt;li&gt;an on-demand admin trigger, whose authentication and {@code ROLE_AUDIT_ADMIN}
+ *       check are its authorization, scoped to the caller's own tenant.&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+@Service
+public class RetentionService {
+<span class="fc" id="L34">    private static final Logger LOGGER = LoggerFactory.getLogger(RetentionService.class);</span>
+
+    private final AuditService auditService;
+    private final ChainHeadRepository chainHeads;
+    private final AuditProperties properties;
+
+<span class="fc" id="L40">    public RetentionService(AuditService auditService, ChainHeadRepository chainHeads,</span>
+                            AuditProperties properties) {
+<span class="fc" id="L42">        this.auditService = auditService;</span>
+<span class="fc" id="L43">        this.chainHeads = chainHeads;</span>
+<span class="fc" id="L44">        this.properties = properties;</span>
+<span class="fc" id="L45">    }</span>
+
+    @Scheduled(cron = &quot;${audit.retention.cron:0 0 2 * * *}&quot;)
+    public void scheduledRetentionSweep() {
+<span class="nc bnc" id="L49" title="All 2 branches missed.">        if (!properties.getRetention().isEnabled()) {</span>
+<span class="nc" id="L50">            return;</span>
+        }
+<span class="nc bnc" id="L52" title="All 2 branches missed.">        for (ChainHead head : chainHeads.findAll()) {</span>
+<span class="nc" id="L53">            int archived = archiveForTenant(systemActorFor(head.getTenantId()), retentionCutoff());</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">            if (archived &gt; 0) {</span>
+<span class="nc" id="L55">                LOGGER.info(&quot;Retention sweep archived {} record(s) for tenant {}&quot;, archived, head.getTenantId());</span>
+            }
+        }
+<span class="nc" id="L58">    }</span>
+
+    /** On-demand sweep for the caller's own tenant. Authorization is checked downstream. */
+    public int applyRetentionPolicy(AuthenticatedActor actor) {
+<span class="fc" id="L62">        return archiveForTenant(actor, retentionCutoff());</span>
+    }
+
+    /** On-demand archive with an explicit age, for operational use. */
+    public int archiveOlderThanDays(AuthenticatedActor actor, int days) {
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        if (days &lt; 0) {</span>
+<span class="fc" id="L68">            throw new IllegalArgumentException(&quot;olderThanDays must be &gt;= 0&quot;);</span>
+        }
+<span class="fc" id="L70">        return archiveForTenant(actor, Instant.now().minus(days, ChronoUnit.DAYS));</span>
+    }
+
+    private int archiveForTenant(AuthenticatedActor actor, Instant cutoff) {
+<span class="fc" id="L74">        return auditService.archiveOlderThan(actor, cutoff);</span>
+    }
+
+    private Instant retentionCutoff() {
+<span class="fc" id="L78">        return Instant.now().minus(properties.getRetention().getDays(), ChronoUnit.DAYS);</span>
+    }
+
+    /**
+     * The identity the scheduler acts under. It is confined to one tenant per iteration
+     * rather than being a global bypass, so the sweep goes through the same tenant-scoped
+     * code path - and the same authorization check - as a human administrator would.
+     */
+    private static AuthenticatedActor systemActorFor(String tenantId) {
+<span class="nc" id="L87">        return new AuthenticatedActor(&quot;system-retention&quot;, &quot;system-retention&quot;, tenantId, true);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

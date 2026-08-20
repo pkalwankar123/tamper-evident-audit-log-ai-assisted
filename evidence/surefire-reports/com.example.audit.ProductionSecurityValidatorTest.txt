@@ -1,0 +1,17 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.ProductionSecurityValidatorTest
+-------------------------------------------------------------------------------
+Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in com.example.audit.ProductionSecurityValidatorTest
+com.example.audit.ProductionSecurityValidatorTest.automaticSchemaUpdatesAreRejected -- Time elapsed: 0.015 s
+com.example.audit.ProductionSecurityValidatorTest.oidcNeedsAnIssuerOrJwkSetUri -- Time elapsed: 0.003 s
+com.example.audit.ProductionSecurityValidatorTest.missingKeySourceIsRejected -- Time elapsed: 0.005 s
+com.example.audit.ProductionSecurityValidatorTest.h2DatasourceIsRejected -- Time elapsed: 0.003 s
+com.example.audit.ProductionSecurityValidatorTest.wildcardCorsIsRejected -- Time elapsed: 0.010 s
+com.example.audit.ProductionSecurityValidatorTest.configuredKeysNeedAKeyId -- Time elapsed: 0.005 s
+com.example.audit.ProductionSecurityValidatorTest.debugSurfacesMustBeOff -- Time elapsed: 0.008 s
+com.example.audit.ProductionSecurityValidatorTest.secureConfigurationPasses -- Time elapsed: 0.002 s
+com.example.audit.ProductionSecurityValidatorTest.ephemeralSigningKeysAreRejected -- Time elapsed: 0.002 s
+com.example.audit.ProductionSecurityValidatorTest.basicAuthIsRejected -- Time elapsed: 0.003 s
+com.example.audit.ProductionSecurityValidatorTest.oidcIsMandatory -- Time elapsed: 0.004 s
+com.example.audit.ProductionSecurityValidatorTest.insecureConfigurationAbortsStartupWithAllProblems -- Time elapsed: 0.003 s
+com.example.audit.ProductionSecurityValidatorTest.tlsMustBeAccountedFor -- Time elapsed: 0.004 s

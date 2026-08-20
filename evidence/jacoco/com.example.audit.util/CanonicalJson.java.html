@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CanonicalJson.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.util</a> &gt; <span class="el_source">CanonicalJson.java</span></div><h1>CanonicalJson.java</h1><pre class="source lang-java linenums">package com.example.audit.util;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import org.springframework.stereotype.Component;
+
+@Component
+public class CanonicalJson {
+    private final ObjectMapper mapper;
+
+<span class="fc" id="L13">    public CanonicalJson(ObjectMapper objectMapper) {</span>
+<span class="fc" id="L14">        this.mapper = objectMapper.copy().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);</span>
+<span class="fc" id="L15">    }</span>
+
+    public String write(JsonNode node) {
+        try {
+<span class="fc" id="L19">            return mapper.writeValueAsString(node);</span>
+<span class="nc" id="L20">        } catch (JsonProcessingException exception) {</span>
+<span class="nc" id="L21">            throw new IllegalArgumentException(&quot;Payload cannot be serialized&quot;, exception);</span>
+        }
+    }
+
+    public JsonNode read(String value) {
+        try {
+<span class="fc" id="L27">            return mapper.readTree(value);</span>
+<span class="nc" id="L28">        } catch (JsonProcessingException exception) {</span>
+<span class="nc" id="L29">            throw new IllegalStateException(&quot;Stored JSON is invalid&quot;, exception);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuditAppender.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">AuditAppender.java</span></div><h1>AuditAppender.java</h1><pre class="source lang-java linenums">package com.example.audit.service;
+
+import com.example.audit.config.AuditProperties;
+import com.example.audit.domain.AuditRecord;
+import com.example.audit.domain.ChainHead;
+import com.example.audit.domain.IdempotencyRecord;
+import com.example.audit.repository.AuditRecordRepository;
+import com.example.audit.repository.ChainHeadRepository;
+import com.example.audit.repository.IdempotencyRecordRepository;
+import com.example.audit.security.AuthenticatedActor;
+import com.example.audit.util.Hashing;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+/**
+ * The single transactional unit that extends a tenant chain by one record.
+ *
+ * &lt;p&gt;Everything that must succeed or fail together lives here: taking the chain-head
+ * lock, computing the link, inserting the record, advancing the head, and reserving the
+ * idempotency key. If any step fails, all of them roll back - so a failed append leaves
+ * no consumed index, no dangling head, and no burned idempotency key. That is what
+ * {@code AppendRollbackTest} asserts.
+ *
+ * &lt;p&gt;Serialization is the database row lock on {@link ChainHead}, not an in-process
+ * monitor. The previous {@code synchronized} on the service method was doubly wrong: it
+ * did nothing across nodes, and because Spring wraps the method in a transactional
+ * proxy the lock was released before the transaction committed, so even single-node
+ * writers could interleave between hash computation and commit.
+ */
+@Service
+public class AuditAppender {
+    private final AuditRecordRepository records;
+    private final ChainHeadRepository chainHeads;
+    private final IdempotencyRecordRepository idempotencyRecords;
+    private final AuditProperties properties;
+
+<span class="fc" id="L41">    public AuditAppender(AuditRecordRepository records, ChainHeadRepository chainHeads,</span>
+                         IdempotencyRecordRepository idempotencyRecords, AuditProperties properties) {
+<span class="fc" id="L43">        this.records = records;</span>
+<span class="fc" id="L44">        this.chainHeads = chainHeads;</span>
+<span class="fc" id="L45">        this.idempotencyRecords = idempotencyRecords;</span>
+<span class="fc" id="L46">        this.properties = properties;</span>
+<span class="fc" id="L47">    }</span>
+
+    @Transactional
+    public AuditRecord append(AuthenticatedActor actor, String eventType, String resourceType, String resourceId,
+                              Instant eventTime, String canonicalPayload, String idempotencyKey,
+                              String requestHash) {
+<span class="fc" id="L53">        int payloadBytes = canonicalPayload.getBytes(StandardCharsets.UTF_8).length;</span>
+<span class="pc bpc" id="L54" title="1 of 2 branches missed.">        if (payloadBytes &gt; properties.getPayload().getMaxBytes()) {</span>
+<span class="nc" id="L55">            throw new PayloadTooLargeException(&quot;Payload of &quot; + payloadBytes + &quot; bytes exceeds the &quot;</span>
+<span class="nc" id="L56">                    + properties.getPayload().getMaxBytes() + &quot; byte limit (audit.payload.max-bytes)&quot;);</span>
+        }
+
+<span class="fc" id="L59">        ChainHead head = chainHeads.lockByTenantId(actor.tenantId())</span>
+<span class="pc" id="L60">                .orElseThrow(() -&gt; new IllegalStateException(</span>
+<span class="nc" id="L61">                        &quot;Chain head for tenant '&quot; + actor.tenantId() + &quot;' was not initialised&quot;));</span>
+
+<span class="fc" id="L63">        Instant ingestedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);</span>
+<span class="fc" id="L64">        long index = head.getLastIndex() + 1;</span>
+<span class="fc" id="L65">        String previousHash = head.getLastHash();</span>
+<span class="fc" id="L66">        String payloadCommitment = Hashing.sha256(canonicalPayload);</span>
+<span class="fc" id="L67">        String recordHash = AuditService.calculateRecordHash(actor.tenantId(), index, eventType, actor.actorId(),</span>
+<span class="fc" id="L68">                resourceType, resourceId, eventTime, ingestedAt, payloadCommitment, previousHash);</span>
+
+<span class="fc" id="L70">        AuditRecord record = new AuditRecord(actor.tenantId(), index, eventType, actor.actorId(), resourceType,</span>
+<span class="fc" id="L71">                resourceId, eventTime, ingestedAt, canonicalPayload, payloadCommitment, previousHash, recordHash);</span>
+<span class="fc" id="L72">        AuditRecord saved = records.saveAndFlush(record);</span>
+
+<span class="fc" id="L74">        head.advance(index, recordHash);</span>
+<span class="fc" id="L75">        chainHeads.saveAndFlush(head);</span>
+
+<span class="pc bpc" id="L77" title="1 of 4 branches missed.">        if (idempotencyKey != null &amp;&amp; !idempotencyKey.isBlank()) {</span>
+            // Unique (tenant, key) - a concurrent duplicate loses here and the whole
+            // append rolls back, leaving the winner's single record in the chain.
+<span class="fc" id="L80">            idempotencyRecords.saveAndFlush(new IdempotencyRecord(actor.tenantId(), idempotencyKey, requestHash,</span>
+<span class="fc" id="L81">                    saved.getId(), Instant.now().truncatedTo(ChronoUnit.MILLIS)));</span>
+        }
+<span class="fc" id="L83">        return saved;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

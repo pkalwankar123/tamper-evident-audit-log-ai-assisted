@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuditProperties.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.config</a> &gt; <span class="el_source">AuditProperties.java</span></div><h1>AuditProperties.java</h1><pre class="source lang-java linenums">package com.example.audit.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Typed configuration for every security-relevant knob in the service.
+ *
+ * &lt;p&gt;Nothing in this class carries a credential-shaped default. Passwords, signing keys
+ * and issuer URIs all default to blank so that a missing value is an explicit,
+ * detectable absence rather than a silently-applied demo secret. The {@code prod}
+ * profile is validated at startup by {@code ProductionSecurityValidator}, which refuses
+ * to let the context finish building while any required value is still blank.
+ */
+@Configuration
+@ConfigurationProperties(prefix = &quot;audit&quot;)
+<span class="fc" id="L22">public class AuditProperties {</span>
+<span class="fc" id="L23">    private final Retention retention = new Retention();</span>
+<span class="fc" id="L24">    private final Signing signing = new Signing();</span>
+<span class="fc" id="L25">    private final Identity identity = new Identity();</span>
+<span class="fc" id="L26">    private final Payload payload = new Payload();</span>
+<span class="fc" id="L27">    private final RateLimit rateLimit = new RateLimit();</span>
+<span class="fc" id="L28">    private final Security security = new Security();</span>
+<span class="fc" id="L29">    private final Idempotency idempotency = new Idempotency();</span>
+
+<span class="fc" id="L31">    public Retention getRetention() { return retention; }</span>
+<span class="fc" id="L32">    public Signing getSigning() { return signing; }</span>
+<span class="fc" id="L33">    public Identity getIdentity() { return identity; }</span>
+<span class="fc" id="L34">    public Payload getPayload() { return payload; }</span>
+<span class="fc" id="L35">    public RateLimit getRateLimit() { return rateLimit; }</span>
+<span class="fc" id="L36">    public Security getSecurity() { return security; }</span>
+<span class="fc" id="L37">    public Idempotency getIdempotency() { return idempotency; }</span>
+
+<span class="fc" id="L39">    public static class Retention {</span>
+        private boolean enabled;
+<span class="fc" id="L41">        private int days = 365;</span>
+<span class="fc" id="L42">        private String cron = &quot;0 0 2 * * *&quot;;</span>
+<span class="nc" id="L43">        public boolean isEnabled() { return enabled; }</span>
+<span class="fc" id="L44">        public void setEnabled(boolean enabled) { this.enabled = enabled; }</span>
+<span class="fc" id="L45">        public int getDays() { return days; }</span>
+<span class="fc" id="L46">        public void setDays(int days) { this.days = days; }</span>
+<span class="nc" id="L47">        public String getCron() { return cron; }</span>
+<span class="nc" id="L48">        public void setCron(String cron) { this.cron = cron; }</span>
+    }
+
+    /**
+     * Signing key material configuration.
+     *
+     * &lt;p&gt;{@code allowEphemeral} defaults to {@code false}: when no key source is
+     * configured the application fails to start rather than silently minting a
+     * throwaway keypair that would make every previously exported bundle unverifiable
+     * after a restart. Local development opts in explicitly, or points
+     * {@code storePath} at a durable file.
+     */
+<span class="fc" id="L60">    public static class Signing {</span>
+<span class="fc" id="L61">        private String keyId = &quot;&quot;;</span>
+<span class="fc" id="L62">        private String privateKeyBase64 = &quot;&quot;;</span>
+<span class="fc" id="L63">        private String publicKeyBase64 = &quot;&quot;;</span>
+<span class="fc" id="L64">        private String storePath = &quot;&quot;;</span>
+        private boolean allowEphemeral;
+<span class="fc" id="L66">        public String getKeyId() { return keyId; }</span>
+<span class="fc" id="L67">        public void setKeyId(String keyId) { this.keyId = keyId; }</span>
+<span class="fc" id="L68">        public String getPrivateKeyBase64() { return privateKeyBase64; }</span>
+<span class="fc" id="L69">        public void setPrivateKeyBase64(String privateKeyBase64) { this.privateKeyBase64 = privateKeyBase64; }</span>
+<span class="fc" id="L70">        public String getPublicKeyBase64() { return publicKeyBase64; }</span>
+<span class="fc" id="L71">        public void setPublicKeyBase64(String publicKeyBase64) { this.publicKeyBase64 = publicKeyBase64; }</span>
+<span class="fc" id="L72">        public String getStorePath() { return storePath; }</span>
+<span class="fc" id="L73">        public void setStorePath(String storePath) { this.storePath = storePath; }</span>
+<span class="fc" id="L74">        public boolean isAllowEphemeral() { return allowEphemeral; }</span>
+<span class="fc" id="L75">        public void setAllowEphemeral(boolean allowEphemeral) { this.allowEphemeral = allowEphemeral; }</span>
+    }
+
+    /**
+     * How an authenticated principal is mapped onto the (actorId, tenantId) pair used
+     * for every authorization decision. Callers never supply either value.
+     *
+     * &lt;p&gt;With OIDC/JWT the values come from token claims. With the local HTTP Basic
+     * fallback they come from {@code audit.identity.principals.&lt;username&gt;.*}. A
+     * principal with no resolvable binding is denied outright.
+     */
+<span class="fc" id="L86">    public static class Identity {</span>
+<span class="fc" id="L87">        private String actorClaim = &quot;sub&quot;;</span>
+<span class="fc" id="L88">        private String tenantClaim = &quot;tenant_id&quot;;</span>
+<span class="fc" id="L89">        private String rolesClaim = &quot;roles&quot;;</span>
+<span class="fc" id="L90">        private Map&lt;String, PrincipalBinding&gt; principals = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L91">        public String getActorClaim() { return actorClaim; }</span>
+<span class="nc" id="L92">        public void setActorClaim(String actorClaim) { this.actorClaim = actorClaim; }</span>
+<span class="fc" id="L93">        public String getTenantClaim() { return tenantClaim; }</span>
+<span class="nc" id="L94">        public void setTenantClaim(String tenantClaim) { this.tenantClaim = tenantClaim; }</span>
+<span class="fc" id="L95">        public String getRolesClaim() { return rolesClaim; }</span>
+<span class="nc" id="L96">        public void setRolesClaim(String rolesClaim) { this.rolesClaim = rolesClaim; }</span>
+<span class="fc" id="L97">        public Map&lt;String, PrincipalBinding&gt; getPrincipals() { return principals; }</span>
+<span class="fc" id="L98">        public void setPrincipals(Map&lt;String, PrincipalBinding&gt; principals) { this.principals = principals; }</span>
+    }
+
+<span class="fc" id="L101">    public static class PrincipalBinding {</span>
+<span class="fc" id="L102">        private String actorId = &quot;&quot;;</span>
+<span class="fc" id="L103">        private String tenantId = &quot;&quot;;</span>
+<span class="fc" id="L104">        public String getActorId() { return actorId; }</span>
+<span class="fc" id="L105">        public void setActorId(String actorId) { this.actorId = actorId; }</span>
+<span class="fc" id="L106">        public String getTenantId() { return tenantId; }</span>
+<span class="fc" id="L107">        public void setTenantId(String tenantId) { this.tenantId = tenantId; }</span>
+    }
+
+<span class="fc" id="L110">    public static class Payload {</span>
+<span class="fc" id="L111">        private int maxBytes = 65536;</span>
+<span class="fc" id="L112">        public int getMaxBytes() { return maxBytes; }</span>
+<span class="fc" id="L113">        public void setMaxBytes(int maxBytes) { this.maxBytes = maxBytes; }</span>
+    }
+
+<span class="fc" id="L116">    public static class RateLimit {</span>
+<span class="fc" id="L117">        private boolean enabled = true;</span>
+<span class="fc" id="L118">        private int requestsPerMinute = 120;</span>
+<span class="fc" id="L119">        public boolean isEnabled() { return enabled; }</span>
+<span class="fc" id="L120">        public void setEnabled(boolean enabled) { this.enabled = enabled; }</span>
+<span class="fc" id="L121">        public int getRequestsPerMinute() { return requestsPerMinute; }</span>
+<span class="fc" id="L122">        public void setRequestsPerMinute(int requestsPerMinute) { this.requestsPerMinute = requestsPerMinute; }</span>
+    }
+
+    /**
+     * Durable replay/idempotency protection for appends. Keys are persisted in the
+     * database rather than in memory, so a retry that lands on a different node - or
+     * arrives after a restart - is still recognised as a replay instead of appending a
+     * duplicate chain record.
+     */
+<span class="fc" id="L131">    public static class Idempotency {</span>
+        private boolean required;
+<span class="fc" id="L133">        private int retentionHours = 24;</span>
+<span class="nc" id="L134">        public boolean isRequired() { return required; }</span>
+<span class="fc" id="L135">        public void setRequired(boolean required) { this.required = required; }</span>
+<span class="nc" id="L136">        public int getRetentionHours() { return retentionHours; }</span>
+<span class="nc" id="L137">        public void setRetentionHours(int retentionHours) { this.retentionHours = retentionHours; }</span>
+    }
+
+<span class="fc" id="L140">    public static class Security {</span>
+<span class="fc" id="L141">        private final Basic basic = new Basic();</span>
+<span class="fc" id="L142">        private final Oidc oidc = new Oidc();</span>
+<span class="fc" id="L143">        private final Cors cors = new Cors();</span>
+<span class="fc" id="L144">        private final Tls tls = new Tls();</span>
+        private boolean csrfEnabled;
+<span class="fc" id="L146">        public Basic getBasic() { return basic; }</span>
+<span class="fc" id="L147">        public Oidc getOidc() { return oidc; }</span>
+<span class="fc" id="L148">        public Cors getCors() { return cors; }</span>
+<span class="fc" id="L149">        public Tls getTls() { return tls; }</span>
+<span class="fc" id="L150">        public boolean isCsrfEnabled() { return csrfEnabled; }</span>
+<span class="nc" id="L151">        public void setCsrfEnabled(boolean csrfEnabled) { this.csrfEnabled = csrfEnabled; }</span>
+    }
+
+    /**
+     * Local-only HTTP Basic fallback. Blank passwords mean &quot;generate a random one at
+     * startup and log it&quot; - dev convenience with no credential in the repository. The
+     * production validator rejects this mechanism entirely.
+     */
+<span class="fc" id="L159">    public static class Basic {</span>
+<span class="fc" id="L160">        private boolean enabled = true;</span>
+<span class="fc" id="L161">        private String writerPassword = &quot;&quot;;</span>
+<span class="fc" id="L162">        private String readerPassword = &quot;&quot;;</span>
+<span class="fc" id="L163">        private String adminPassword = &quot;&quot;;</span>
+<span class="fc" id="L164">        public boolean isEnabled() { return enabled; }</span>
+<span class="fc" id="L165">        public void setEnabled(boolean enabled) { this.enabled = enabled; }</span>
+<span class="fc" id="L166">        public String getWriterPassword() { return writerPassword; }</span>
+<span class="fc" id="L167">        public void setWriterPassword(String writerPassword) { this.writerPassword = writerPassword; }</span>
+<span class="fc" id="L168">        public String getReaderPassword() { return readerPassword; }</span>
+<span class="fc" id="L169">        public void setReaderPassword(String readerPassword) { this.readerPassword = readerPassword; }</span>
+<span class="fc" id="L170">        public String getAdminPassword() { return adminPassword; }</span>
+<span class="fc" id="L171">        public void setAdminPassword(String adminPassword) { this.adminPassword = adminPassword; }</span>
+    }
+
+<span class="fc" id="L174">    public static class Oidc {</span>
+        private boolean enabled;
+<span class="fc" id="L176">        private String issuerUri = &quot;&quot;;</span>
+<span class="fc" id="L177">        private String jwkSetUri = &quot;&quot;;</span>
+<span class="fc" id="L178">        private String audience = &quot;&quot;;</span>
+<span class="fc" id="L179">        public boolean isEnabled() { return enabled; }</span>
+<span class="fc" id="L180">        public void setEnabled(boolean enabled) { this.enabled = enabled; }</span>
+<span class="fc" id="L181">        public String getIssuerUri() { return issuerUri; }</span>
+<span class="fc" id="L182">        public void setIssuerUri(String issuerUri) { this.issuerUri = issuerUri; }</span>
+<span class="fc" id="L183">        public String getJwkSetUri() { return jwkSetUri; }</span>
+<span class="fc" id="L184">        public void setJwkSetUri(String jwkSetUri) { this.jwkSetUri = jwkSetUri; }</span>
+<span class="fc" id="L185">        public String getAudience() { return audience; }</span>
+<span class="nc" id="L186">        public void setAudience(String audience) { this.audience = audience; }</span>
+    }
+
+<span class="fc" id="L189">    public static class Cors {</span>
+<span class="fc" id="L190">        private List&lt;String&gt; allowedOrigins = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L191">        public List&lt;String&gt; getAllowedOrigins() { return allowedOrigins; }</span>
+<span class="fc" id="L192">        public void setAllowedOrigins(List&lt;String&gt; allowedOrigins) { this.allowedOrigins = allowedOrigins; }</span>
+    }
+
+<span class="fc" id="L195">    public static class Tls {</span>
+        private boolean externallyTerminated;
+<span class="fc" id="L197">        public boolean isExternallyTerminated() { return externallyTerminated; }</span>
+        public void setExternallyTerminated(boolean externallyTerminated) {
+<span class="fc" id="L199">            this.externallyTerminated = externallyTerminated;</span>
+<span class="fc" id="L200">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuditAccessPolicy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.security</a> &gt; <span class="el_source">AuditAccessPolicy.java</span></div><h1>AuditAccessPolicy.java</h1><pre class="source lang-java linenums">package com.example.audit.security;
+
+import com.example.audit.domain.AuditRecord;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Component;
+
+/**
+ * The single place where &quot;may this actor touch this data&quot; is decided.
+ *
+ * &lt;p&gt;Deliberately a service-layer collaborator rather than a web filter or controller
+ * concern: the enforcement has to hold for any caller of {@code AuditService} /
+ * {@code ExportService} / {@code RetentionService}, and it has to be directly testable
+ * without going through HTTP. {@code AuditAccessPolicyTest} and
+ * {@code ServiceLayerAuthorizationTest} exercise it at exactly that level.
+ *
+ * &lt;p&gt;Two independent axes:
+ * &lt;ul&gt;
+ *   &lt;li&gt;&lt;b&gt;Tenant&lt;/b&gt; - absolute. Nobody, administrators included, may read, verify,
+ *       export, archive or redact data outside their own tenant.&lt;/li&gt;
+ *   &lt;li&gt;&lt;b&gt;Actor&lt;/b&gt; - within a tenant, an administrator may act across actors; every
+ *       other principal is confined to its own {@code actorId}.&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+@Component
+<span class="fc" id="L25">public class AuditAccessPolicy {</span>
+
+    public void requireAdmin(AuthenticatedActor actor, String action) {
+<span class="fc bfc" id="L28" title="All 2 branches covered.">        if (!actor.admin()) {</span>
+<span class="fc" id="L29">            throw new AccessDeniedException(&quot;Principal '&quot; + actor.username()</span>
+<span class="fc" id="L30">                    + &quot;' requires ROLE_AUDIT_ADMIN to perform: &quot; + action);</span>
+        }
+<span class="fc" id="L32">    }</span>
+
+    /**
+     * Resolves the {@code actorId} a query may actually filter on.
+     *
+     * &lt;p&gt;A non-admin is always pinned to its own actor. If it explicitly asked for a
+     * different one it gets an honest 403 rather than a silently-rewritten filter that
+     * would return a confusing empty page. An admin may ask for any actor, or for none
+     * (meaning every actor in its own tenant).
+     */
+    public String resolveQueryActorId(AuthenticatedActor actor, String requestedActorId) {
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        if (actor.admin()) {</span>
+<span class="fc" id="L44">            return requestedActorId;</span>
+        }
+<span class="fc bfc" id="L46" title="All 4 branches covered.">        if (requestedActorId != null &amp;&amp; !requestedActorId.equals(actor.actorId())) {</span>
+<span class="fc" id="L47">            throw new AccessDeniedException(&quot;Principal '&quot; + actor.username()</span>
+<span class="fc" id="L48">                    + &quot;' is not authorized to read data for actorId '&quot; + requestedActorId + &quot;'&quot;);</span>
+        }
+<span class="fc" id="L50">        return actor.actorId();</span>
+    }
+
+    /** Tenant isolation for a single record. Applies to admins too. */
+    public void requireTenant(AuthenticatedActor actor, String recordTenantId) {
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (!actor.tenantId().equals(recordTenantId)) {</span>
+<span class="fc" id="L56">            throw new AccessDeniedException(&quot;Principal '&quot; + actor.username() + &quot;' (tenant '&quot;</span>
+<span class="fc" id="L57">                    + actor.tenantId() + &quot;') is not authorized to access data in tenant '&quot;</span>
+<span class="fc" id="L58">                    + recordTenantId + &quot;'&quot;);</span>
+        }
+<span class="fc" id="L60">    }</span>
+
+    /** Tenant isolation plus actor ownership for a single record. */
+    public void requireRecordAccess(AuthenticatedActor actor, AuditRecord record) {
+<span class="fc" id="L64">        requireTenant(actor, record.getTenantId());</span>
+<span class="fc bfc" id="L65" title="All 4 branches covered.">        if (!actor.admin() &amp;&amp; !actor.actorId().equals(record.getActorId())) {</span>
+<span class="fc" id="L66">            throw new AccessDeniedException(&quot;Principal '&quot; + actor.username()</span>
+                    + &quot;' is not authorized to access records owned by actorId '&quot;
+<span class="fc" id="L68">                    + record.getActorId() + &quot;'&quot;);</span>
+        }
+<span class="fc" id="L70">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

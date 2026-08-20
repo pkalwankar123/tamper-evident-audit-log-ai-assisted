@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuditController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.api</a> &gt; <span class="el_source">AuditController.java</span></div><h1>AuditController.java</h1><pre class="source lang-java linenums">package com.example.audit.api;
+
+import com.example.audit.security.ActorResolver;
+import com.example.audit.security.AuthenticatedActor;
+import com.example.audit.service.AuditService;
+import com.example.audit.service.CheckpointService;
+import com.example.audit.service.ExportService;
+import com.example.audit.service.RetentionService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * The HTTP surface.
+ *
+ * &lt;p&gt;Note that no endpoint accepts an {@code actorId} or {@code tenantId} for the
+ * purposes of a security decision. Both are resolved from the authenticated principal
+ * by {@link ActorResolver} and passed down as an {@link AuthenticatedActor}. The one
+ * remaining {@code actorId} query parameter, on read and export, is a &lt;em&gt;filter&lt;/em&gt;
+ * within data the caller may already see - the service re-checks it against the policy
+ * and denies rather than widening scope.
+ *
+ * &lt;p&gt;Authorization is enforced in the service layer, not here. The role rules in
+ * {@code SecurityConfig} are a coarse first gate; the binding decisions live next to the
+ * data so they cannot be bypassed by a future caller that is not this controller.
+ */
+@RestController
+@RequestMapping(&quot;/audit&quot;)
+@Validated
+@Tag(name = &quot;Audit Log&quot;, description = &quot;Append, query, verify, redact, checkpoint, archive and export audit events&quot;)
+public class AuditController {
+    private static final int MAX_PAGE_SIZE = 500;
+
+    private final AuditService auditService;
+    private final ExportService exportService;
+    private final RetentionService retentionService;
+    private final CheckpointService checkpointService;
+    private final ActorResolver actorResolver;
+
+<span class="fc" id="L62">    public AuditController(AuditService auditService, ExportService exportService,</span>
+                           RetentionService retentionService, CheckpointService checkpointService,
+                           ActorResolver actorResolver) {
+<span class="fc" id="L65">        this.auditService = auditService;</span>
+<span class="fc" id="L66">        this.exportService = exportService;</span>
+<span class="fc" id="L67">        this.retentionService = retentionService;</span>
+<span class="fc" id="L68">        this.checkpointService = checkpointService;</span>
+<span class="fc" id="L69">        this.actorResolver = actorResolver;</span>
+<span class="fc" id="L70">    }</span>
+
+    @PostMapping
+    @Operation(summary = &quot;Append an audit event&quot;,
+            description = &quot;Appends to the calling tenant's hash chain. The actor and tenant recorded are &quot;
+                    + &quot;derived from the authenticated principal - they cannot be supplied by the caller. &quot;
+                    + &quot;Supply an Idempotency-Key header to make retries safe: a replay returns the original &quot;
+                    + &quot;record with 200 instead of appending a duplicate.&quot;)
+    public ResponseEntity&lt;ApiModels.AuditEventResponse&gt; append(
+            @Valid @RequestBody ApiModels.CreateAuditEventRequest request,
+            @RequestHeader(name = &quot;Idempotency-Key&quot;, required = false)
+            @Size(max = 200, message = &quot;Idempotency-Key must be at most 200 characters&quot;) String idempotencyKey,
+            Authentication authentication) {
+<span class="fc" id="L83">        AuthenticatedActor actor = actorResolver.resolve(authentication);</span>
+<span class="fc" id="L84">        ApiModels.AppendOutcome outcome = auditService.append(actor, request, idempotencyKey);</span>
+<span class="fc" id="L85">        return ResponseEntity</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">                .status(outcome.replayed() ? HttpStatus.OK : HttpStatus.CREATED)</span>
+<span class="fc" id="L87">                .header(&quot;Idempotent-Replay&quot;, Boolean.toString(outcome.replayed()))</span>
+<span class="fc" id="L88">                .body(outcome.event());</span>
+    }
+
+    @GetMapping
+    @Operation(summary = &quot;Query audit events&quot;,
+            description = &quot;Always confined to the caller's tenant. Non-admin callers are additionally &quot;
+                    + &quot;confined to their own actorId; asking for another actor is denied, not silently &quot;
+                    + &quot;rewritten.&quot;)
+    public Page&lt;ApiModels.AuditEventResponse&gt; query(
+            @RequestParam(required = false) String actorId,
+            @RequestParam(required = false) String resourceType,
+            @RequestParam(required = false) String resourceId,
+            @RequestParam(required = false) String eventType,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = &quot;false&quot;) boolean includeArchived,
+            @RequestParam(defaultValue = &quot;0&quot;) int page,
+            @RequestParam(defaultValue = &quot;50&quot;) int size,
+            Authentication authentication) {
+<span class="fc" id="L107">        validatePagination(page, size, from, to);</span>
+<span class="fc" id="L108">        AuthenticatedActor actor = actorResolver.resolve(authentication);</span>
+<span class="fc" id="L109">        return auditService.query(actor, actorId, resourceType, resourceId, eventType, from, to, includeArchived,</span>
+<span class="fc" id="L110">                PageRequest.of(page, size, Sort.by(&quot;chainIndex&quot;).ascending()));</span>
+    }
+
+    @GetMapping(&quot;/{id}&quot;)
+    @Operation(summary = &quot;Fetch a single audit event&quot;,
+            description = &quot;Denied for records outside the caller's tenant, or owned by another actor when &quot;
+                    + &quot;the caller is not an administrator.&quot;)
+    public ApiModels.AuditEventResponse findById(@PathVariable UUID id, Authentication authentication) {
+<span class="fc" id="L118">        return auditService.findById(actorResolver.resolve(authentication), id);</span>
+    }
+
+    @GetMapping(&quot;/verify&quot;)
+    @Operation(summary = &quot;Verify the tenant hash chain&quot;,
+            description = &quot;Recomputes the caller's tenant chain, including archived records, replays the &quot;
+                    + &quot;redaction ledger, and checks every signed checkpoint. Returns intact=false with a &quot;
+                    + &quot;violation type on tamper.&quot;)
+    public ApiModels.VerificationResponse verify(Authentication authentication) {
+<span class="fc" id="L127">        return auditService.verify(actorResolver.resolve(authentication));</span>
+    }
+
+    @PostMapping(&quot;/{id}/redact&quot;)
+    @Operation(summary = &quot;Redact a payload field&quot;,
+            description = &quot;Admin-only, tenant-scoped. The redacting actor is taken from the principal and &quot;
+                    + &quot;written into the redaction ledger, which keeps the chain verifiable.&quot;)
+    public ApiModels.RedactionResponse redact(@PathVariable UUID id,
+                                              @Valid @RequestBody ApiModels.RedactionRequest request,
+                                              Authentication authentication) {
+<span class="fc" id="L137">        return auditService.redact(actorResolver.resolve(authentication), id, request);</span>
+    }
+
+    @GetMapping(&quot;/export&quot;)
+    @Operation(summary = &quot;Export a signed, independently verifiable bundle&quot;,
+            description = &quot;Admin-only and confined to the caller's tenant. The bundle contains the &quot;
+                    + &quot;contiguous chain segment plus each record's redaction ledger, so a recipient can &quot;
+                    + &quot;re-derive every hash and check the Ed25519 signature offline.&quot;)
+    public ApiModels.ExportManifest export(@RequestParam(required = false) String actorId,
+                                           @RequestParam(required = false) String resourceId,
+                                           Authentication authentication) {
+<span class="fc" id="L148">        return exportService.export(actorResolver.resolve(authentication), actorId, resourceId);</span>
+    }
+
+    @PostMapping(&quot;/retention/run&quot;)
+    @Operation(summary = &quot;Run the retention sweep on demand&quot;,
+            description = &quot;Admin-only, scoped to the caller's tenant. Archives records older than &quot;
+                    + &quot;audit.retention.days. Archiving never deletes and never alters hashed fields.&quot;)
+    public ApiModels.ArchiveResponse runRetention(Authentication authentication) {
+<span class="fc" id="L156">        AuthenticatedActor actor = actorResolver.resolve(authentication);</span>
+<span class="fc" id="L157">        int archived = retentionService.applyRetentionPolicy(actor);</span>
+<span class="fc" id="L158">        return archiveResponse(actor, archived);</span>
+    }
+
+    @PostMapping(&quot;/archive&quot;)
+    @Operation(summary = &quot;Archive records older than a given age&quot;,
+            description = &quot;Admin-only, scoped to the caller's tenant. The response reports whether the &quot;
+                    + &quot;chain still verifies afterwards, so archiving can never quietly damage integrity.&quot;)
+    public ApiModels.ArchiveResponse archive(@RequestParam(defaultValue = &quot;365&quot;) int olderThanDays,
+                                             Authentication authentication) {
+<span class="fc" id="L167">        AuthenticatedActor actor = actorResolver.resolve(authentication);</span>
+<span class="fc" id="L168">        int archived = retentionService.archiveOlderThanDays(actor, olderThanDays);</span>
+<span class="fc" id="L169">        return archiveResponse(actor, archived);</span>
+    }
+
+    @PostMapping(&quot;/checkpoints&quot;)
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = &quot;Create a signed chain checkpoint&quot;,
+            description = &quot;Admin-only. Signs (chainIndex, recordHash) for the tenant head so later &quot;
+                    + &quot;verification can detect truncation or a wholesale chain rewrite, which link &quot;
+                    + &quot;checking alone cannot.&quot;)
+    public ApiModels.CheckpointResponse createCheckpoint(Authentication authentication) {
+<span class="fc" id="L179">        return checkpointService.createCheckpoint(actorResolver.resolve(authentication));</span>
+    }
+
+    @GetMapping(&quot;/checkpoints&quot;)
+    @Operation(summary = &quot;List signed chain checkpoints&quot;, description = &quot;Admin-only, tenant-scoped.&quot;)
+    public List&lt;ApiModels.CheckpointResponse&gt; listCheckpoints(Authentication authentication) {
+<span class="fc" id="L185">        return checkpointService.listCheckpoints(actorResolver.resolve(authentication));</span>
+    }
+
+    private ApiModels.ArchiveResponse archiveResponse(AuthenticatedActor actor, int archived) {
+<span class="fc" id="L189">        boolean intact = auditService.verify(actor).intact();</span>
+<span class="fc" id="L190">        return new ApiModels.ArchiveResponse(archived, actor.tenantId(), Instant.now(), intact);</span>
+    }
+
+    private void validatePagination(int page, int size, Instant from, Instant to) {
+<span class="fc bfc" id="L194" title="All 2 branches covered.">        if (page &lt; 0) {</span>
+<span class="fc" id="L195">            throw new IllegalArgumentException(&quot;page must be &gt;= 0&quot;);</span>
+        }
+<span class="fc bfc" id="L197" title="All 4 branches covered.">        if (size &lt; 1 || size &gt; MAX_PAGE_SIZE) {</span>
+<span class="fc" id="L198">            throw new IllegalArgumentException(&quot;size must be between 1 and &quot; + MAX_PAGE_SIZE);</span>
+        }
+<span class="pc bpc" id="L200" title="2 of 6 branches missed.">        if (from != null &amp;&amp; to != null &amp;&amp; from.isAfter(to)) {</span>
+<span class="fc" id="L201">            throw new IllegalArgumentException(&quot;from must not be after to&quot;);</span>
+        }
+<span class="fc" id="L203">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

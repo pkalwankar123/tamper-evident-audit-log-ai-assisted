@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SigningKey.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.security.keys</a> &gt; <span class="el_source">SigningKey.java</span></div><h1>SigningKey.java</h1><pre class="source lang-java linenums"><span class="fc" id="L1">package com.example.audit.security.keys;</span>
+
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.time.Instant;
+import java.util.Base64;
+
+/**
+ * One Ed25519 signing key, identified by a stable {@code keyId}.
+ *
+ * &lt;p&gt;The {@code keyId} is what makes rotation workable: every signature the service
+ * emits carries the id of the key that produced it, so a bundle signed before a
+ * rotation stays verifiable afterwards by looking the retired key up rather than
+ * assuming the current one.
+ */
+public record SigningKey(String keyId, String privateKeyBase64, String publicKeyBase64, Instant createdAt) {
+
+    public static SigningKey generate(String keyId, Instant createdAt) {
+        try {
+<span class="fc" id="L26">            KeyPairGenerator generator = KeyPairGenerator.getInstance(&quot;Ed25519&quot;);</span>
+<span class="fc" id="L27">            KeyPair pair = generator.generateKeyPair();</span>
+<span class="fc" id="L28">            return new SigningKey(keyId,</span>
+<span class="fc" id="L29">                    Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded()),</span>
+<span class="fc" id="L30">                    Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()),</span>
+<span class="fc" id="L31">                    createdAt);</span>
+<span class="nc" id="L32">        } catch (GeneralSecurityException exception) {</span>
+<span class="nc" id="L33">            throw new IllegalStateException(&quot;Unable to generate an Ed25519 signing key&quot;, exception);</span>
+        }
+    }
+
+    public PrivateKey privateKey() {
+        try {
+<span class="fc" id="L39">            return KeyFactory.getInstance(&quot;Ed25519&quot;)</span>
+<span class="fc" id="L40">                    .generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(privateKeyBase64)));</span>
+<span class="fc" id="L41">        } catch (GeneralSecurityException | IllegalArgumentException exception) {</span>
+<span class="fc" id="L42">            throw new IllegalStateException(&quot;Signing key '&quot; + keyId + &quot;' has an unusable private key&quot;, exception);</span>
+        }
+    }
+
+    public PublicKey publicKey() {
+        try {
+<span class="fc" id="L48">            return KeyFactory.getInstance(&quot;Ed25519&quot;)</span>
+<span class="fc" id="L49">                    .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyBase64)));</span>
+<span class="nc" id="L50">        } catch (GeneralSecurityException | IllegalArgumentException exception) {</span>
+<span class="nc" id="L51">            throw new IllegalStateException(&quot;Signing key '&quot; + keyId + &quot;' has an unusable public key&quot;, exception);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

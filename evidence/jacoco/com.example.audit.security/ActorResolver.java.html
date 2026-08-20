@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ActorResolver.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.security</a> &gt; <span class="el_source">ActorResolver.java</span></div><h1>ActorResolver.java</h1><pre class="source lang-java linenums">package com.example.audit.security;
+
+import com.example.audit.config.AuditProperties;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.stereotype.Component;
+
+/**
+ * Derives the trusted {@link AuthenticatedActor} from the authenticated principal.
+ *
+ * &lt;p&gt;This class replaces the previous &quot;validate the actorId the caller sent&quot; model.
+ * Nothing here reads the request body or query parameters: the actor and tenant are
+ * produced from the token or from the configured principal binding, and the caller has
+ * no way to influence them. Requests that used to carry {@code actorId} simply no
+ * longer have that field.
+ *
+ * &lt;p&gt;Resolution fails closed. A principal with no tenant, or no actor, is rejected with
+ * {@link AccessDeniedException} rather than being defaulted to anything.
+ */
+@Component
+public class ActorResolver {
+    public static final String ROLE_ADMIN = &quot;ROLE_AUDIT_ADMIN&quot;;
+    public static final String ROLE_WRITER = &quot;ROLE_AUDIT_WRITER&quot;;
+    public static final String ROLE_READER = &quot;ROLE_AUDIT_READER&quot;;
+
+    private final AuditProperties properties;
+
+<span class="fc" id="L31">    public ActorResolver(AuditProperties properties) {</span>
+<span class="fc" id="L32">        this.properties = properties;</span>
+<span class="fc" id="L33">    }</span>
+
+    public AuthenticatedActor resolve(Authentication authentication) {
+<span class="pc bpc" id="L36" title="1 of 4 branches missed.">        if (authentication == null || !authentication.isAuthenticated()) {</span>
+<span class="fc" id="L37">            throw new AccessDeniedException(&quot;Unauthenticated request cannot be attributed to an actor&quot;);</span>
+        }
+<span class="fc" id="L39">        boolean admin = hasRole(authentication, ROLE_ADMIN);</span>
+<span class="fc bfc" id="L40" title="All 2 branches covered.">        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {</span>
+<span class="fc" id="L41">            return fromJwt(jwtAuthentication.getToken(), admin);</span>
+        }
+<span class="fc" id="L43">        return fromBinding(authentication.getName(), admin);</span>
+    }
+
+    private AuthenticatedActor fromJwt(Jwt jwt, boolean admin) {
+<span class="fc" id="L47">        AuditProperties.Identity identity = properties.getIdentity();</span>
+<span class="fc" id="L48">        String actorId = stringClaim(jwt, identity.getActorClaim());</span>
+<span class="fc" id="L49">        String tenantId = stringClaim(jwt, identity.getTenantClaim());</span>
+<span class="pc bpc" id="L50" title="1 of 4 branches missed.">        if (actorId == null || actorId.isBlank()) {</span>
+<span class="fc" id="L51">            throw new AccessDeniedException(</span>
+<span class="fc" id="L52">                    &quot;Token is missing the required actor claim '&quot; + identity.getActorClaim() + &quot;'&quot;);</span>
+        }
+<span class="pc bpc" id="L54" title="1 of 4 branches missed.">        if (tenantId == null || tenantId.isBlank()) {</span>
+<span class="fc" id="L55">            throw new AccessDeniedException(</span>
+<span class="fc" id="L56">                    &quot;Token is missing the required tenant claim '&quot; + identity.getTenantClaim() + &quot;'&quot;);</span>
+        }
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        String username = jwt.getSubject() == null ? actorId : jwt.getSubject();</span>
+<span class="fc" id="L59">        return new AuthenticatedActor(username, actorId, tenantId, admin);</span>
+    }
+
+    private AuthenticatedActor fromBinding(String username, boolean admin) {
+<span class="fc" id="L63">        AuditProperties.PrincipalBinding binding = properties.getIdentity().getPrincipals().get(username);</span>
+<span class="pc bpc" id="L64" title="1 of 6 branches missed.">        if (binding == null || binding.getActorId().isBlank() || binding.getTenantId().isBlank()) {</span>
+<span class="fc" id="L65">            throw new AccessDeniedException(</span>
+<span class="fc" id="L66">                    &quot;No actor/tenant identity binding is configured for principal '&quot; + username + &quot;'&quot;);</span>
+        }
+<span class="fc" id="L68">        return new AuthenticatedActor(username, binding.getActorId(), binding.getTenantId(), admin);</span>
+    }
+
+    private static String stringClaim(Jwt jwt, String claim) {
+<span class="fc" id="L72">        Object value = jwt.getClaim(claim);</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        return value == null ? null : value.toString();</span>
+    }
+
+    private static boolean hasRole(Authentication authentication, String role) {
+<span class="fc" id="L77">        return authentication.getAuthorities().stream()</span>
+<span class="fc" id="L78">                .map(GrantedAuthority::getAuthority)</span>
+<span class="fc" id="L79">                .anyMatch(role::equals);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

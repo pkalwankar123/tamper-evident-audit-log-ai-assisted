@@ -1,0 +1,13 @@
+# Build output. Test/coverage evidence is retained under evidence/ instead, so that
+# the reports backing any claim in the documentation are inspectable in the repository
+# rather than existing only on whoever last ran the build.
+target/
+
+# Local runtime state. data/ holds the dev H2 database AND the dev signing key store -
+# neither belongs in version control, and the key store in particular is private key
+# material.
+data/
+
+.idea/
+*.iml
+.vscode/

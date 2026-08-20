@@ -1,0 +1,12 @@
+-------------------------------------------------------------------------------
+Test set: com.example.audit.RetentionAndArchiveTest
+-------------------------------------------------------------------------------
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.991 s -- in com.example.audit.RetentionAndArchiveTest
+com.example.audit.RetentionAndArchiveTest.archivingPreservesVerifiability -- Time elapsed: 0.836 s
+com.example.audit.RetentionAndArchiveTest.archivedRecordsAreExcludedUnlessAskedFor -- Time elapsed: 0.794 s
+com.example.audit.RetentionAndArchiveTest.retentionRunReportsTenantAndIntegrity -- Time elapsed: 0.318 s
+com.example.audit.RetentionAndArchiveTest.tamperingWithAnArchivedRecordIsDetected -- Time elapsed: 0.462 s
+com.example.audit.RetentionAndArchiveTest.retentionNeverDeletes -- Time elapsed: 0.465 s
+com.example.audit.RetentionAndArchiveTest.archivingTwiceIsIdempotent -- Time elapsed: 0.453 s
+com.example.audit.RetentionAndArchiveTest.negativeArchiveAgeIsRejected -- Time elapsed: 0.156 s
+com.example.audit.RetentionAndArchiveTest.archiveAppliesTheAgeCutoff -- Time elapsed: 0.468 s

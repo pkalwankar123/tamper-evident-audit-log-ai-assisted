@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuditService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">AuditService.java</span></div><h1>AuditService.java</h1><pre class="source lang-java linenums"><span class="fc" id="L1">package com.example.audit.service;</span>
+
+import com.example.audit.api.ApiModels;
+import com.example.audit.domain.AuditRecord;
+import com.example.audit.domain.ChainCheckpoint;
+import com.example.audit.domain.IdempotencyRecord;
+import com.example.audit.domain.RedactionEntry;
+import com.example.audit.repository.AuditRecordRepository;
+import com.example.audit.repository.ChainCheckpointRepository;
+import com.example.audit.repository.IdempotencyRecordRepository;
+import com.example.audit.repository.RedactionEntryRepository;
+import com.example.audit.security.AuditAccessPolicy;
+import com.example.audit.security.AuthenticatedActor;
+import com.example.audit.util.CanonicalJson;
+import com.example.audit.util.Hashing;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.persistence.criteria.Predicate;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Audit log behaviour, with authorization enforced here rather than only at the web
+ * layer.
+ *
+ * &lt;p&gt;Every public method takes an {@link AuthenticatedActor} and consults
+ * {@link AuditAccessPolicy} before touching data. That placement is deliberate: it means
+ * tenant isolation and actor ownership hold for any caller of this class, and it makes
+ * the guarantees testable without HTTP - see {@code ServiceLayerAuthorizationTest},
+ * which drives these methods directly and asserts that actor-a cannot reach actor-b or
+ * tenant-b data.
+ *
+ * &lt;p&gt;Each tenant has its own hash chain. A shared global chain would make a
+ * tenant-scoped verification impossible to express - the verifier would see gaps
+ * wherever another tenant's records were filtered out - so the chain is partitioned
+ * along the same boundary the authorization model uses.
+ */
+@Service
+public class AuditService {
+<span class="fc" id="L53">    public static final String GENESIS_HASH = &quot;0&quot;.repeat(64);</span>
+<span class="fc" id="L54">    private static final String REDACTED = &quot;[REDACTED]&quot;;</span>
+
+    private final AuditRecordRepository records;
+    private final RedactionEntryRepository redactions;
+    private final ChainCheckpointRepository checkpoints;
+    private final IdempotencyRecordRepository idempotencyRecords;
+    private final CanonicalJson canonicalJson;
+    private final AuditAccessPolicy accessPolicy;
+    private final AuditAppender appender;
+    private final ChainHeadService chainHeadService;
+    private final SigningService signingService;
+
+<span class="fc" id="L66">    public AuditService(AuditRecordRepository records, RedactionEntryRepository redactions,</span>
+                        ChainCheckpointRepository checkpoints, IdempotencyRecordRepository idempotencyRecords,
+                        CanonicalJson canonicalJson, AuditAccessPolicy accessPolicy, AuditAppender appender,
+                        ChainHeadService chainHeadService, SigningService signingService) {
+<span class="fc" id="L70">        this.records = records;</span>
+<span class="fc" id="L71">        this.redactions = redactions;</span>
+<span class="fc" id="L72">        this.checkpoints = checkpoints;</span>
+<span class="fc" id="L73">        this.idempotencyRecords = idempotencyRecords;</span>
+<span class="fc" id="L74">        this.canonicalJson = canonicalJson;</span>
+<span class="fc" id="L75">        this.accessPolicy = accessPolicy;</span>
+<span class="fc" id="L76">        this.appender = appender;</span>
+<span class="fc" id="L77">        this.chainHeadService = chainHeadService;</span>
+<span class="fc" id="L78">        this.signingService = signingService;</span>
+<span class="fc" id="L79">    }</span>
+
+    // ------------------------------------------------------------------
+    // Append
+    // ------------------------------------------------------------------
+
+    /**
+     * Appends one record. The actor and tenant written onto it come from {@code actor}
+     * and are not influenced by the request in any way.
+     *
+     * &lt;p&gt;Intentionally not {@code @Transactional}: the idempotency lookup and the retry
+     * that follows a lost insert race have to observe another transaction's commit, so
+     * the transactional boundary is one level down in {@link AuditAppender}.
+     */
+    public ApiModels.AppendOutcome append(AuthenticatedActor actor, ApiModels.CreateAuditEventRequest request,
+                                          String idempotencyKey) {
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        Instant eventTime = (request.timestamp() == null ? Instant.now() : request.timestamp())</span>
+<span class="fc" id="L96">                .truncatedTo(ChronoUnit.MILLIS);</span>
+<span class="fc" id="L97">        String canonicalPayload = canonicalJson.write(request.payload());</span>
+<span class="fc" id="L98">        String requestHash = requestHash(actor, request, canonicalPayload);</span>
+
+<span class="fc" id="L100">        Optional&lt;ApiModels.AppendOutcome&gt; replay = replayIfSeen(actor, idempotencyKey, requestHash);</span>
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (replay.isPresent()) {</span>
+<span class="fc" id="L102">            return replay.get();</span>
+        }
+
+<span class="fc" id="L105">        chainHeadService.ensureExists(actor.tenantId());</span>
+        try {
+<span class="fc" id="L107">            AuditRecord saved = appender.append(actor, request.eventType(), request.resourceType(),</span>
+<span class="fc" id="L108">                    request.resourceId(), eventTime, canonicalPayload, idempotencyKey, requestHash);</span>
+<span class="fc" id="L109">            return new ApiModels.AppendOutcome(toResponse(saved), false);</span>
+<span class="fc" id="L110">        } catch (DataIntegrityViolationException lostRace) {</span>
+            // A concurrent request with the same idempotency key committed first; that
+            // append rolled back, so serve the winner rather than reporting an error.
+<span class="fc" id="L113">            return replayIfSeen(actor, idempotencyKey, requestHash)</span>
+<span class="pc" id="L114">                    .orElseThrow(() -&gt; lostRace);</span>
+        }
+    }
+
+    private Optional&lt;ApiModels.AppendOutcome&gt; replayIfSeen(AuthenticatedActor actor, String idempotencyKey,
+                                                           String requestHash) {
+<span class="pc bpc" id="L120" title="1 of 4 branches missed.">        if (idempotencyKey == null || idempotencyKey.isBlank()) {</span>
+<span class="fc" id="L121">            return Optional.empty();</span>
+        }
+<span class="fc" id="L123">        return idempotencyRecords.findByTenantIdAndIdempotencyKey(actor.tenantId(), idempotencyKey)</span>
+<span class="fc" id="L124">                .map(existing -&gt; {</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">                    if (!existing.getRequestHash().equals(requestHash)) {</span>
+<span class="fc" id="L126">                        throw new IdempotencyConflictException(&quot;Idempotency-Key '&quot; + idempotencyKey</span>
+                                + &quot;' was already used for a different request body&quot;);
+                    }
+<span class="fc" id="L129">                    AuditRecord original = records.findById(existing.getRecordId())</span>
+<span class="pc" id="L130">                            .orElseThrow(() -&gt; new IllegalStateException(</span>
+<span class="nc" id="L131">                                    &quot;Idempotency key references a record that no longer exists&quot;));</span>
+<span class="fc" id="L132">                    return new ApiModels.AppendOutcome(toResponse(original), true);</span>
+                });
+    }
+
+    /**
+     * Fingerprints what the &lt;em&gt;caller&lt;/em&gt; sent, so a genuine retry of the same request
+     * matches.
+     *
+     * &lt;p&gt;Only the client-supplied timestamp is included, never the server-side default.
+     * Folding {@code Instant.now()} in here made every retry look like a different
+     * request, so a replay was reported as a 409 conflict and the idempotency guarantee
+     * silently did nothing - the failure mode
+     * {@code AuditLogIntegrationTest.replayWithSameKeyReturnsOriginal} pins.
+     */
+    private String requestHash(AuthenticatedActor actor, ApiModels.CreateAuditEventRequest request,
+                               String canonicalPayload) {
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        String clientTimestamp = request.timestamp() == null</span>
+<span class="fc" id="L149">                ? &quot;server-assigned&quot;</span>
+<span class="fc" id="L150">                : request.timestamp().truncatedTo(ChronoUnit.MILLIS).toString();</span>
+<span class="fc" id="L151">        return Hashing.sha256(String.join(&quot;|&quot;, actor.tenantId(), actor.actorId(), request.eventType(),</span>
+<span class="fc" id="L152">                request.resourceType(), request.resourceId(), clientTimestamp, canonicalPayload));</span>
+    }
+
+    // ------------------------------------------------------------------
+    // Query
+    // ------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public Page&lt;ApiModels.AuditEventResponse&gt; query(AuthenticatedActor actor, String requestedActorId,
+                                                     String resourceType, String resourceId, String eventType,
+                                                     Instant from, Instant to, boolean includeArchived,
+                                                     Pageable pageable) {
+<span class="fc" id="L164">        String scopedActorId = accessPolicy.resolveQueryActorId(actor, requestedActorId);</span>
+<span class="fc" id="L165">        Specification&lt;AuditRecord&gt; specification = (root, query, builder) -&gt; {</span>
+<span class="fc" id="L166">            List&lt;Predicate&gt; predicates = new ArrayList&lt;&gt;();</span>
+            // Tenant is never optional and is never taken from the request.
+<span class="fc" id="L168">            predicates.add(builder.equal(root.get(&quot;tenantId&quot;), actor.tenantId()));</span>
+<span class="fc bfc" id="L169" title="All 2 branches covered.">            if (scopedActorId != null) predicates.add(builder.equal(root.get(&quot;actorId&quot;), scopedActorId));</span>
+<span class="pc bpc" id="L170" title="1 of 2 branches missed.">            if (resourceType != null) predicates.add(builder.equal(root.get(&quot;resourceType&quot;), resourceType));</span>
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">            if (resourceId != null) predicates.add(builder.equal(root.get(&quot;resourceId&quot;), resourceId));</span>
+<span class="pc bpc" id="L172" title="1 of 2 branches missed.">            if (eventType != null) predicates.add(builder.equal(root.get(&quot;eventType&quot;), eventType));</span>
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">            if (from != null) predicates.add(builder.greaterThanOrEqualTo(root.get(&quot;timestamp&quot;), from));</span>
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">            if (to != null) predicates.add(builder.lessThanOrEqualTo(root.get(&quot;timestamp&quot;), to));</span>
+<span class="fc bfc" id="L175" title="All 2 branches covered.">            if (!includeArchived) predicates.add(builder.isFalse(root.get(&quot;archived&quot;)));</span>
+<span class="fc" id="L176">            return builder.and(predicates.toArray(Predicate[]::new));</span>
+        };
+<span class="fc" id="L178">        return records.findAll(specification, pageable).map(this::toResponse);</span>
+    }
+
+    @Transactional(readOnly = true)
+    public ApiModels.AuditEventResponse findById(AuthenticatedActor actor, UUID id) {
+<span class="fc" id="L183">        AuditRecord record = records.findById(id)</span>
+<span class="pc" id="L184">                .orElseThrow(() -&gt; new NoSuchElementException(&quot;Audit record not found&quot;));</span>
+<span class="fc" id="L185">        accessPolicy.requireRecordAccess(actor, record);</span>
+<span class="fc" id="L186">        return toResponse(record);</span>
+    }
+
+    // ------------------------------------------------------------------
+    // Redaction
+    // ------------------------------------------------------------------
+
+    @Transactional
+    public ApiModels.RedactionResponse redact(AuthenticatedActor actor, UUID id,
+                                              ApiModels.RedactionRequest request) {
+<span class="fc" id="L196">        accessPolicy.requireAdmin(actor, &quot;redact an audit record&quot;);</span>
+<span class="fc" id="L197">        AuditRecord record = records.findById(id)</span>
+<span class="fc" id="L198">                .orElseThrow(() -&gt; new NoSuchElementException(&quot;Audit record not found&quot;));</span>
+        // Tenant isolation before anything else: an administrator of tenant A must not
+        // be able to redact - or even confirm the existence of - a record in tenant B.
+<span class="fc" id="L201">        accessPolicy.requireTenant(actor, record.getTenantId());</span>
+
+<span class="fc" id="L203">        JsonNode root = canonicalJson.read(record.getPayloadJson()).deepCopy();</span>
+<span class="pc bpc" id="L204" title="1 of 2 branches missed.">        if (!(root instanceof ObjectNode objectNode)) {</span>
+<span class="nc" id="L205">            throw new IllegalArgumentException(&quot;Payload root must be a JSON object for structured redaction&quot;);</span>
+        }
+<span class="fc bfc" id="L207" title="All 2 branches covered.">        if (objectNode.at(request.fieldPath()).isMissingNode()) {</span>
+<span class="fc" id="L208">            throw new IllegalArgumentException(&quot;JSON Pointer field path does not exist: &quot; + request.fieldPath());</span>
+        }
+<span class="fc" id="L210">        replaceAtPointer(objectNode, request.fieldPath(), REDACTED);</span>
+
+<span class="fc" id="L212">        String previousPayloadHash = Hashing.sha256(record.getPayloadJson());</span>
+<span class="fc" id="L213">        String newPayload = canonicalJson.write(objectNode);</span>
+<span class="fc" id="L214">        String newPayloadHash = Hashing.sha256(newPayload);</span>
+<span class="fc" id="L215">        RedactionEntry prior = redactions.findTopByRecordIdOrderBySequenceNumberDesc(id).orElse(null);</span>
+<span class="pc bpc" id="L216" title="1 of 2 branches missed.">        long sequence = prior == null ? 1 : prior.getSequenceNumber() + 1;</span>
+<span class="pc bpc" id="L217" title="1 of 2 branches missed.">        String previousEntryHash = prior == null ? GENESIS_HASH : prior.getEntryHash();</span>
+<span class="fc" id="L218">        Instant createdAt = Instant.now().truncatedTo(ChronoUnit.MILLIS);</span>
+        // The redacting actor is the authenticated principal, not a body field.
+<span class="fc" id="L220">        String entryHash = calculateRedactionHash(id, sequence, request.fieldPath(), request.reason(),</span>
+<span class="fc" id="L221">                actor.actorId(), createdAt, previousPayloadHash, newPayloadHash, previousEntryHash);</span>
+<span class="fc" id="L222">        redactions.save(new RedactionEntry(record.getTenantId(), id, sequence, request.fieldPath(),</span>
+<span class="fc" id="L223">                request.reason(), actor.actorId(), createdAt, previousPayloadHash, newPayloadHash,</span>
+<span class="fc" id="L224">                previousEntryHash, entryHash));</span>
+<span class="fc" id="L225">        record.setPayloadJson(newPayload);</span>
+<span class="fc" id="L226">        records.save(record);</span>
+<span class="fc" id="L227">        return new ApiModels.RedactionResponse(id, request.fieldPath(), REDACTED, entryHash);</span>
+    }
+
+    // ------------------------------------------------------------------
+    // Verification
+    // ------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public ApiModels.VerificationResponse verify(AuthenticatedActor actor) {
+<span class="fc" id="L236">        List&lt;AuditRecord&gt; all = records.findByTenantIdOrderByChainIndexAsc(actor.tenantId());</span>
+<span class="fc" id="L237">        String expectedPrevious = GENESIS_HASH;</span>
+<span class="fc" id="L238">        long expectedIndex = 1;</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">        for (AuditRecord record : all) {</span>
+<span class="fc bfc" id="L240" title="All 2 branches covered.">            if (record.getChainIndex() != expectedIndex) {</span>
+<span class="fc" id="L241">                return broken(record, &quot;CHAIN_INDEX_GAP&quot;, &quot;Expected chain index &quot; + expectedIndex);</span>
+            }
+<span class="fc bfc" id="L243" title="All 2 branches covered.">            if (!Objects.equals(record.getPreviousHash(), expectedPrevious)) {</span>
+<span class="fc" id="L244">                return broken(record, &quot;PREVIOUS_HASH_MISMATCH&quot;, &quot;Record does not link to its predecessor&quot;);</span>
+            }
+<span class="fc" id="L246">            String calculated = calculateRecordHash(record.getTenantId(), record.getChainIndex(),</span>
+<span class="fc" id="L247">                    record.getEventType(), record.getActorId(), record.getResourceType(), record.getResourceId(),</span>
+<span class="fc" id="L248">                    record.getTimestamp(), record.getIngestedAt(), record.getPayloadCommitment(),</span>
+<span class="fc" id="L249">                    record.getPreviousHash());</span>
+<span class="pc bpc" id="L250" title="1 of 2 branches missed.">            if (!Objects.equals(calculated, record.getRecordHash())) {</span>
+<span class="nc" id="L251">                return broken(record, &quot;RECORD_HASH_MISMATCH&quot;, &quot;Immutable record content was modified&quot;);</span>
+            }
+<span class="fc" id="L253">            String redactionProblem = verifyPayloadAndRedactions(record);</span>
+<span class="fc bfc" id="L254" title="All 2 branches covered.">            if (redactionProblem != null) {</span>
+<span class="fc" id="L255">                return broken(record, &quot;PAYLOAD_OR_REDACTION_LEDGER_MISMATCH&quot;, redactionProblem);</span>
+            }
+<span class="fc" id="L257">            expectedPrevious = record.getRecordHash();</span>
+<span class="fc" id="L258">            expectedIndex++;</span>
+        }
+
+<span class="fc" id="L261">        ApiModels.VerificationResponse checkpointProblem = verifyCheckpoints(actor.tenantId(), all);</span>
+<span class="fc bfc" id="L262" title="All 2 branches covered.">        if (checkpointProblem != null) {</span>
+<span class="fc" id="L263">            return checkpointProblem;</span>
+        }
+<span class="fc" id="L265">        return new ApiModels.VerificationResponse(true, (long) all.size(), null, null, null, &quot;Chain is intact&quot;);</span>
+    }
+
+    /**
+     * Checks the chain against previously signed commitments.
+     *
+     * &lt;p&gt;Link checking alone cannot catch a consistent rewrite: delete the last three
+     * records, or rebuild the whole chain, and every remaining link still verifies.
+     * Checkpoints do catch it, because the service already attested to a specific
+     * {@code recordHash} at a specific index and that attestation is signed.
+     */
+    private ApiModels.VerificationResponse verifyCheckpoints(String tenantId, List&lt;AuditRecord&gt; chain) {
+<span class="fc bfc" id="L277" title="All 2 branches covered.">        for (ChainCheckpoint checkpoint : checkpoints.findByTenantIdOrderByChainIndexAsc(tenantId)) {</span>
+<span class="fc" id="L278">            if (!signingService.verify(checkpoint.signingPayload(), checkpoint.getSignatureBase64(),</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">                    checkpoint.getKeyId())) {</span>
+<span class="fc" id="L280">                return new ApiModels.VerificationResponse(false, (long) chain.size(), null,</span>
+<span class="fc" id="L281">                        checkpoint.getChainIndex(), &quot;CHECKPOINT_SIGNATURE_INVALID&quot;,</span>
+<span class="fc" id="L282">                        &quot;Checkpoint at index &quot; + checkpoint.getChainIndex()</span>
+                                + &quot; is not signed by a key this service recognises&quot;);
+            }
+<span class="fc bfc" id="L285" title="All 2 branches covered.">            if (chain.size() &lt; checkpoint.getChainIndex()) {</span>
+<span class="fc" id="L286">                return new ApiModels.VerificationResponse(false, (long) chain.size(), null,</span>
+<span class="fc" id="L287">                        checkpoint.getChainIndex(), &quot;CHECKPOINT_MISSING_RECORDS&quot;,</span>
+<span class="fc" id="L288">                        &quot;A signed checkpoint exists for index &quot; + checkpoint.getChainIndex()</span>
+<span class="fc" id="L289">                                + &quot; but the chain now ends at &quot; + chain.size() + &quot; - records were removed&quot;);</span>
+            }
+<span class="fc" id="L291">            AuditRecord atIndex = chain.get((int) checkpoint.getChainIndex() - 1);</span>
+<span class="fc bfc" id="L292" title="All 2 branches covered.">            if (!atIndex.getRecordHash().equals(checkpoint.getRecordHash())) {</span>
+<span class="fc" id="L293">                return broken(atIndex, &quot;CHECKPOINT_MISMATCH&quot;,</span>
+<span class="fc" id="L294">                        &quot;Record at index &quot; + checkpoint.getChainIndex()</span>
+                                + &quot; does not match the signed checkpoint for that index&quot;);
+            }
+        }
+<span class="fc" id="L298">        return null;</span>
+    }
+
+    // ------------------------------------------------------------------
+    // Retention / archive
+    // ------------------------------------------------------------------
+
+    /**
+     * Soft-archives records older than the cutoff, within the tenant only.
+     *
+     * &lt;p&gt;Archiving marks a flag and nothing else - no field that feeds a hash is
+     * touched - so an archived record still verifies. {@code RetentionAndArchiveTest}
+     * asserts that explicitly rather than relying on the claim.
+     */
+    @Transactional
+    public int archiveOlderThan(AuthenticatedActor actor, Instant cutoff) {
+<span class="fc" id="L314">        accessPolicy.requireAdmin(actor, &quot;archive audit records&quot;);</span>
+<span class="fc" id="L315">        List&lt;AuditRecord&gt; candidates =</span>
+<span class="fc" id="L316">                records.findByTenantIdAndTimestampBeforeAndArchivedFalse(actor.tenantId(), cutoff);</span>
+<span class="fc" id="L317">        candidates.forEach(record -&gt; record.setArchived(true));</span>
+<span class="fc" id="L318">        records.saveAll(candidates);</span>
+<span class="fc" id="L319">        return candidates.size();</span>
+    }
+
+    /** Expires idempotency keys past their retention window. */
+    @Transactional
+    public int purgeExpiredIdempotencyKeys(Instant cutoff) {
+<span class="nc" id="L325">        List&lt;IdempotencyRecord&gt; expired = idempotencyRecords.findByCreatedAtBefore(cutoff);</span>
+<span class="nc" id="L326">        idempotencyRecords.deleteAll(expired);</span>
+<span class="nc" id="L327">        return expired.size();</span>
+    }
+
+    // ------------------------------------------------------------------
+    // Read helpers used by export
+    // ------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public List&lt;AuditRecord&gt; tenantRecords(AuthenticatedActor actor) {
+<span class="fc" id="L336">        return records.findByTenantIdOrderByChainIndexAsc(actor.tenantId());</span>
+    }
+
+    @Transactional(readOnly = true)
+    public List&lt;ApiModels.RedactionEntryView&gt; redactionViews(UUID recordId) {
+<span class="fc" id="L341">        return redactions.findByRecordIdOrderBySequenceNumberAsc(recordId).stream()</span>
+<span class="fc" id="L342">                .map(entry -&gt; new ApiModels.RedactionEntryView(entry.getSequenceNumber(), entry.getFieldPath(),</span>
+<span class="fc" id="L343">                        entry.getReason(), entry.getActorId(), entry.getCreatedAt(),</span>
+<span class="fc" id="L344">                        entry.getPreviousPayloadHash(), entry.getNewPayloadHash(), entry.getPreviousEntryHash(),</span>
+<span class="fc" id="L345">                        entry.getEntryHash()))</span>
+<span class="fc" id="L346">                .toList();</span>
+    }
+
+    public ApiModels.AuditEventResponse toResponse(AuditRecord record) {
+<span class="fc" id="L350">        return new ApiModels.AuditEventResponse(record.getId(), record.getTenantId(), record.getChainIndex(),</span>
+<span class="fc" id="L351">                record.getEventType(), record.getActorId(), record.getResourceType(), record.getResourceId(),</span>
+<span class="fc" id="L352">                canonicalJson.read(record.getPayloadJson()), record.getTimestamp(), record.getIngestedAt(),</span>
+<span class="fc" id="L353">                record.getPayloadCommitment(), record.getPreviousHash(), record.getRecordHash(),</span>
+<span class="fc" id="L354">                record.isArchived());</span>
+    }
+
+    // ------------------------------------------------------------------
+    // Hashing - shared with ExportVerifier so a recipient computes identical bytes
+    // ------------------------------------------------------------------
+
+    private String verifyPayloadAndRedactions(AuditRecord record) {
+<span class="fc" id="L362">        List&lt;RedactionEntry&gt; entries = redactions.findByRecordIdOrderBySequenceNumberAsc(record.getId());</span>
+<span class="fc" id="L363">        String currentPayloadHash = Hashing.sha256(record.getPayloadJson());</span>
+<span class="fc bfc" id="L364" title="All 2 branches covered.">        if (entries.isEmpty()) {</span>
+<span class="fc bfc" id="L365" title="All 2 branches covered.">            return currentPayloadHash.equals(record.getPayloadCommitment())</span>
+<span class="fc" id="L366">                    ? null : &quot;Payload changed without a redaction entry&quot;;</span>
+        }
+<span class="fc" id="L368">        String expectedPayloadHash = record.getPayloadCommitment();</span>
+<span class="fc" id="L369">        String expectedPreviousEntry = GENESIS_HASH;</span>
+<span class="fc" id="L370">        long expectedSequence = 1;</span>
+<span class="fc bfc" id="L371" title="All 2 branches covered.">        for (RedactionEntry entry : entries) {</span>
+<span class="pc bpc" id="L372" title="1 of 2 branches missed.">            if (entry.getSequenceNumber() != expectedSequence) return &quot;Redaction sequence is not contiguous&quot;;</span>
+<span class="pc bpc" id="L373" title="1 of 2 branches missed.">            if (!entry.getPreviousEntryHash().equals(expectedPreviousEntry)) return &quot;Redaction entry link is invalid&quot;;</span>
+<span class="pc bpc" id="L374" title="1 of 2 branches missed.">            if (!entry.getPreviousPayloadHash().equals(expectedPayloadHash)) {</span>
+<span class="nc" id="L375">                return &quot;Redaction payload transition is invalid&quot;;</span>
+            }
+<span class="fc" id="L377">            String calculated = calculateRedactionHash(entry.getRecordId(), entry.getSequenceNumber(),</span>
+<span class="fc" id="L378">                    entry.getFieldPath(), entry.getReason(), entry.getActorId(), entry.getCreatedAt(),</span>
+<span class="fc" id="L379">                    entry.getPreviousPayloadHash(), entry.getNewPayloadHash(), entry.getPreviousEntryHash());</span>
+<span class="pc bpc" id="L380" title="1 of 2 branches missed.">            if (!calculated.equals(entry.getEntryHash())) return &quot;Redaction entry hash is invalid&quot;;</span>
+<span class="fc" id="L381">            expectedPayloadHash = entry.getNewPayloadHash();</span>
+<span class="fc" id="L382">            expectedPreviousEntry = entry.getEntryHash();</span>
+<span class="fc" id="L383">            expectedSequence++;</span>
+        }
+<span class="fc bfc" id="L385" title="All 2 branches covered.">        return currentPayloadHash.equals(expectedPayloadHash)</span>
+<span class="fc" id="L386">                ? null : &quot;Current payload does not match the latest authorized redaction&quot;;</span>
+    }
+
+    private ApiModels.VerificationResponse broken(AuditRecord record, String type, String details) {
+<span class="fc" id="L390">        return new ApiModels.VerificationResponse(false, record.getChainIndex() - 1, record.getId(),</span>
+<span class="fc" id="L391">                record.getChainIndex(), type, details);</span>
+    }
+
+    public static String calculateRecordHash(String tenantId, long index, String eventType, String actorId,
+                                             String resourceType, String resourceId, Instant timestamp,
+                                             Instant ingestedAt, String payloadCommitment, String previousHash) {
+<span class="fc" id="L397">        return Hashing.sha256(String.join(&quot;|&quot;, tenantId, Long.toString(index), eventType, actorId, resourceType,</span>
+<span class="fc" id="L398">                resourceId, timestamp.toString(), ingestedAt.toString(), payloadCommitment, previousHash));</span>
+    }
+
+    public static String calculateRedactionHash(UUID recordId, long sequence, String fieldPath, String reason,
+                                                String actorId, Instant createdAt, String previousPayloadHash,
+                                                String newPayloadHash, String previousEntryHash) {
+<span class="fc" id="L404">        return Hashing.sha256(String.join(&quot;|&quot;, recordId.toString(), Long.toString(sequence), fieldPath, reason,</span>
+<span class="fc" id="L405">                actorId, createdAt.toString(), previousPayloadHash, newPayloadHash, previousEntryHash));</span>
+    }
+
+    private static void replaceAtPointer(ObjectNode root, String pointer, String replacement) {
+<span class="pc bpc" id="L409" title="2 of 4 branches missed.">        if (!pointer.startsWith(&quot;/&quot;) || pointer.length() &lt; 2) {</span>
+<span class="nc" id="L410">            throw new IllegalArgumentException(&quot;fieldPath must be a JSON Pointer such as /account/number&quot;);</span>
+        }
+<span class="fc" id="L412">        String[] parts = pointer.substring(1).split(&quot;/&quot;);</span>
+<span class="fc" id="L413">        JsonNode current = root;</span>
+<span class="pc bpc" id="L414" title="1 of 2 branches missed.">        for (int i = 0; i &lt; parts.length - 1; i++) {</span>
+<span class="nc" id="L415">            current = current.get(unescape(parts[i]));</span>
+<span class="nc bnc" id="L416" title="All 2 branches missed.">            if (!(current instanceof ObjectNode)) {</span>
+<span class="nc" id="L417">                throw new IllegalArgumentException(&quot;Only object-field JSON Pointers are supported&quot;);</span>
+            }
+        }
+<span class="fc" id="L420">        ((ObjectNode) current).put(unescape(parts[parts.length - 1]), replacement);</span>
+<span class="fc" id="L421">    }</span>
+
+    private static String unescape(String token) {
+<span class="fc" id="L424">        return token.replace(&quot;~1&quot;, &quot;/&quot;).replace(&quot;~0&quot;, &quot;~&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

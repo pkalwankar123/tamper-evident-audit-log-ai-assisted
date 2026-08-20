@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ChainCheckpoint.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.domain</a> &gt; <span class="el_source">ChainCheckpoint.java</span></div><h1>ChainCheckpoint.java</h1><pre class="source lang-java linenums">package com.example.audit.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * A signed commitment to the state of a tenant chain at a point in time.
+ *
+ * &lt;p&gt;Hash chaining alone detects edits and reordering, but it cannot detect a
+ * &lt;em&gt;consistent&lt;/em&gt; rewrite: an attacker with database write access can delete the
+ * last N records, or rebuild the entire chain from scratch, and the result still
+ * verifies internally because every link was recomputed. A checkpoint closes that hole.
+ * It records (chainIndex, recordHash) signed with the service key, so verification can
+ * assert that the chain still contains the exact record the service previously attested
+ * to at that index. Truncation and wholesale rewrites both fail that check.
+ *
+ * &lt;p&gt;Checkpoints are append-only and admin-created; see {@code CheckpointService}.
+ */
+@Entity
+@Table(name = &quot;chain_checkpoints&quot;,
+        indexes = @Index(name = &quot;idx_checkpoint_tenant&quot;, columnList = &quot;tenant_id,chain_index&quot;))
+public class ChainCheckpoint {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = &quot;tenant_id&quot;, nullable = false, updatable = false, length = 200)
+    private String tenantId;
+
+    @Column(name = &quot;chain_index&quot;, nullable = false, updatable = false)
+    private long chainIndex;
+
+    @Column(name = &quot;record_hash&quot;, nullable = false, updatable = false, length = 64)
+    private String recordHash;
+
+    @Column(name = &quot;created_at&quot;, nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = &quot;key_id&quot;, nullable = false, updatable = false, length = 200)
+    private String keyId;
+
+    @Column(name = &quot;signature_base64&quot;, nullable = false, updatable = false, length = 512)
+    private String signatureBase64;
+
+<span class="fc" id="L53">    protected ChainCheckpoint() {</span>
+<span class="fc" id="L54">    }</span>
+
+<span class="fc" id="L56">    public ChainCheckpoint(String tenantId, long chainIndex, String recordHash, Instant createdAt,</span>
+                           String keyId, String signatureBase64) {
+<span class="fc" id="L58">        this.tenantId = tenantId;</span>
+<span class="fc" id="L59">        this.chainIndex = chainIndex;</span>
+<span class="fc" id="L60">        this.recordHash = recordHash;</span>
+<span class="fc" id="L61">        this.createdAt = createdAt;</span>
+<span class="fc" id="L62">        this.keyId = keyId;</span>
+<span class="fc" id="L63">        this.signatureBase64 = signatureBase64;</span>
+<span class="fc" id="L64">    }</span>
+
+<span class="fc" id="L66">    public UUID getId() { return id; }</span>
+<span class="fc" id="L67">    public String getTenantId() { return tenantId; }</span>
+<span class="fc" id="L68">    public long getChainIndex() { return chainIndex; }</span>
+<span class="fc" id="L69">    public String getRecordHash() { return recordHash; }</span>
+<span class="fc" id="L70">    public Instant getCreatedAt() { return createdAt; }</span>
+<span class="fc" id="L71">    public String getKeyId() { return keyId; }</span>
+<span class="fc" id="L72">    public String getSignatureBase64() { return signatureBase64; }</span>
+
+    /** The exact bytes covered by the signature - reproducible by any verifier. */
+    public String signingPayload() {
+<span class="fc" id="L76">        return signingPayload(tenantId, chainIndex, recordHash, createdAt);</span>
+    }
+
+    public static String signingPayload(String tenantId, long chainIndex, String recordHash, Instant createdAt) {
+<span class="fc" id="L80">        return String.join(&quot;|&quot;, &quot;checkpoint-v1&quot;, tenantId, Long.toString(chainIndex), recordHash,</span>
+<span class="fc" id="L81">                createdAt.toString());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

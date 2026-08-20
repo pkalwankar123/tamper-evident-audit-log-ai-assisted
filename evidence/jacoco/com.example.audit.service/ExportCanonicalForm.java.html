@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExportCanonicalForm.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.service</a> &gt; <span class="el_source">ExportCanonicalForm.java</span></div><h1>ExportCanonicalForm.java</h1><pre class="source lang-java linenums">package com.example.audit.service;
+
+import com.example.audit.api.ApiModels;
+
+import java.util.List;
+import java.util.StringJoiner;
+
+/**
+ * The exact byte sequence that an export signature covers.
+ *
+ * &lt;p&gt;Defined as an explicit, line-oriented format rather than &quot;whatever Jackson emits&quot;
+ * because the previous approach was not independently reproducible: a recipient would
+ * have had to replicate one specific serializer's field ordering, null handling and
+ * date format to recompute the hash, which is not a verification story anyone can act
+ * on. Here the format is written down, uses only values that appear verbatim in the
+ * bundle, and is implemented once - shared by the signer ({@link ExportService}) and by
+ * {@link ExportVerifier}, which is the code a recipient runs.
+ *
+ * &lt;p&gt;Format (UTF-8, {@code \n} separated, no trailing newline):
+ * &lt;pre&gt;
+ * audit-export-v2|bundleVersion|generatedAt|tenantId|selectionType|selectionValue|keyId
+ * R|chainIndex|eventType|actorId|resourceType|resourceId|timestamp|ingestedAt|payloadCommitment|previousHash|recordHash|archived|selected
+ * X|chainIndex|sequenceNumber|fieldPath|reason|actorId|createdAt|previousPayloadHash|newPayloadHash|previousEntryHash|entryHash
+ * &lt;/pre&gt;
+ * Record lines appear in ascending chain-index order; each record's redaction lines
+ * follow it in ascending sequence order.
+ */
+public final class ExportCanonicalForm {
+    public static final String VERSION_TAG = &quot;audit-export-v2&quot;;
+
+    private ExportCanonicalForm() {
+    }
+
+    public static String serialize(String bundleVersion, java.time.Instant generatedAt, String tenantId,
+                                   String selectionType, String selectionValue, String keyId,
+                                   List&lt;ApiModels.ExportRecord&gt; records) {
+<span class="fc" id="L37">        StringJoiner lines = new StringJoiner(&quot;\n&quot;);</span>
+<span class="fc" id="L38">        lines.add(String.join(&quot;|&quot;, VERSION_TAG, bundleVersion, generatedAt.toString(), tenantId, selectionType,</span>
+<span class="fc" id="L39">                selectionValue, keyId));</span>
+<span class="fc bfc" id="L40" title="All 2 branches covered.">        for (ApiModels.ExportRecord entry : records) {</span>
+<span class="fc" id="L41">            ApiModels.AuditEventResponse event = entry.event();</span>
+<span class="fc" id="L42">            lines.add(String.join(&quot;|&quot;, &quot;R&quot;, Long.toString(event.chainIndex()), event.eventType(), event.actorId(),</span>
+<span class="fc" id="L43">                    event.resourceType(), event.resourceId(), event.timestamp().toString(),</span>
+<span class="fc" id="L44">                    event.ingestedAt().toString(), event.payloadCommitment(), event.previousHash(),</span>
+<span class="fc" id="L45">                    event.recordHash(), Boolean.toString(event.archived()), Boolean.toString(entry.selected())));</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">            for (ApiModels.RedactionEntryView redaction : entry.redactions()) {</span>
+<span class="fc" id="L47">                lines.add(String.join(&quot;|&quot;, &quot;X&quot;, Long.toString(event.chainIndex()),</span>
+<span class="fc" id="L48">                        Long.toString(redaction.sequenceNumber()), redaction.fieldPath(), redaction.reason(),</span>
+<span class="fc" id="L49">                        redaction.actorId(), redaction.createdAt().toString(), redaction.previousPayloadHash(),</span>
+<span class="fc" id="L50">                        redaction.newPayloadHash(), redaction.previousEntryHash(), redaction.entryHash()));</span>
+            }
+        }
+<span class="fc" id="L53">        return lines.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

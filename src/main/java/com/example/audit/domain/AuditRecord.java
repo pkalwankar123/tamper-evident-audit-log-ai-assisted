@@ -15,9 +15,11 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "audit_records",
-        uniqueConstraints = @UniqueConstraint(name = "uk_audit_chain_index", columnNames = "chain_index"),
+        uniqueConstraints = @UniqueConstraint(name = "uk_audit_tenant_chain_index",
+                columnNames = {"tenant_id", "chain_index"}),
         indexes = {
-                @Index(name = "idx_audit_actor", columnList = "actor_id"),
+                @Index(name = "idx_audit_tenant", columnList = "tenant_id"),
+                @Index(name = "idx_audit_actor", columnList = "tenant_id,actor_id"),
                 @Index(name = "idx_audit_resource", columnList = "resource_type,resource_id"),
                 @Index(name = "idx_audit_event_type", columnList = "event_type"),
                 @Index(name = "idx_audit_timestamp", columnList = "event_timestamp")
@@ -26,6 +28,9 @@ public class AuditRecord {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false, updatable = false, length = 200)
+    private String tenantId;
 
     @Column(name = "chain_index", nullable = false, updatable = false)
     private long chainIndex;
@@ -67,9 +72,10 @@ public class AuditRecord {
     protected AuditRecord() {
     }
 
-    public AuditRecord(long chainIndex, String eventType, String actorId, String resourceType,
+    public AuditRecord(String tenantId, long chainIndex, String eventType, String actorId, String resourceType,
                        String resourceId, Instant timestamp, Instant ingestedAt, String payloadJson,
                        String payloadCommitment, String previousHash, String recordHash) {
+        this.tenantId = tenantId;
         this.chainIndex = chainIndex;
         this.eventType = eventType;
         this.actorId = actorId;
@@ -85,6 +91,7 @@ public class AuditRecord {
     }
 
     public UUID getId() { return id; }
+    public String getTenantId() { return tenantId; }
     public long getChainIndex() { return chainIndex; }
     public String getEventType() { return eventType; }
     public String getActorId() { return actorId; }

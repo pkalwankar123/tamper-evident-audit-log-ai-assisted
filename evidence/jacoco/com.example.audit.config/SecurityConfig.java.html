@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SecurityConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.config</a> &gt; <span class="el_source">SecurityConfig.java</span></div><h1>SecurityConfig.java</h1><pre class="source lang-java linenums">package com.example.audit.config;
+
+import com.example.audit.security.RateLimitFilter;
+import com.example.audit.security.RequestSizeLimitFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Authentication and the coarse role gate.
+ *
+ * &lt;p&gt;&lt;b&gt;Authentication model.&lt;/b&gt; OIDC/OAuth2 bearer tokens are the intended mechanism
+ * and the only one the production profile permits: set
+ * {@code audit.security.oidc.enabled=true} with an issuer or JWK set URI and the service
+ * becomes a resource server, delegating credential handling, session lifetime and MFA to
+ * the identity provider where they belong. HTTP Basic survives only as a local
+ * development and test fallback, and {@link ProductionSecurityValidator} rejects it in
+ * production.
+ *
+ * &lt;p&gt;&lt;b&gt;No credentials in the repository.&lt;/b&gt; The Basic users have no default passwords.
+ * If one is not supplied through configuration, a random password is generated at startup
+ * and logged, the way Spring Boot handles its own default user - developers get a working
+ * login, and there is no fixed secret to leak or to accidentally ship.
+ *
+ * &lt;p&gt;&lt;b&gt;Roles here, ownership in the service layer.&lt;/b&gt; The matchers below decide which
+ * roles may reach which endpoint. They deliberately do not decide whose data may be
+ * touched: that depends on the record, so it lives with the record - see
+ * {@code AuditAccessPolicy}. A route that is somehow reachable without passing a matcher
+ * still cannot cross a tenant boundary.
+ *
+ * &lt;p&gt;&lt;b&gt;CSRF.&lt;/b&gt; Disabled, as an explicit decision about the deployment model rather
+ * than a default left in place. The API is stateless, authenticated per request by a
+ * bearer token or Basic header, and issues no session cookie, so there is no
+ * ambient credential for a cross-site request to ride on. The property
+ * {@code audit.security.csrf-enabled} exists to turn protection back on the moment this
+ * service is fronted by a cookie/session browser flow, which is the condition that would
+ * make CSRF applicable.
+ */
+@Configuration
+@EnableWebSecurity
+<span class="fc" id="L77">public class SecurityConfig {</span>
+<span class="fc" id="L78">    private static final Logger LOGGER = LoggerFactory.getLogger(SecurityConfig.class);</span>
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+<span class="fc" id="L82">        return new BCryptPasswordEncoder();</span>
+    }
+
+    @Bean
+    public InMemoryUserDetailsManager userDetailsService(PasswordEncoder encoder, AuditProperties properties) {
+<span class="fc" id="L87">        AuditProperties.Basic basic = properties.getSecurity().getBasic();</span>
+<span class="fc" id="L88">        UserDetails writer = User.withUsername(&quot;writer&quot;)</span>
+<span class="fc" id="L89">                .password(encoder.encode(resolvePassword(basic.getWriterPassword(), &quot;writer&quot;)))</span>
+<span class="fc" id="L90">                .authorities(&quot;ROLE_AUDIT_WRITER&quot;)</span>
+<span class="fc" id="L91">                .build();</span>
+<span class="fc" id="L92">        UserDetails reader = User.withUsername(&quot;reader&quot;)</span>
+<span class="fc" id="L93">                .password(encoder.encode(resolvePassword(basic.getReaderPassword(), &quot;reader&quot;)))</span>
+<span class="fc" id="L94">                .authorities(&quot;ROLE_AUDIT_READER&quot;)</span>
+<span class="fc" id="L95">                .build();</span>
+<span class="fc" id="L96">        UserDetails admin = User.withUsername(&quot;admin&quot;)</span>
+<span class="fc" id="L97">                .password(encoder.encode(resolvePassword(basic.getAdminPassword(), &quot;admin&quot;)))</span>
+<span class="fc" id="L98">                .authorities(&quot;ROLE_AUDIT_WRITER&quot;, &quot;ROLE_AUDIT_READER&quot;, &quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L99">                .build();</span>
+<span class="fc" id="L100">        return new InMemoryUserDetailsManager(writer, reader, admin);</span>
+    }
+
+    /**
+     * Returns the configured password, or mints a random one and logs it. Never returns
+     * a compiled-in constant - a shipped default password is a credential in the
+     * repository no matter how it is labelled.
+     */
+    private static String resolvePassword(String configured, String username) {
+<span class="pc bpc" id="L109" title="2 of 4 branches missed.">        if (configured != null &amp;&amp; !configured.isBlank()) {</span>
+<span class="fc" id="L110">            return configured;</span>
+        }
+<span class="nc" id="L112">        String generated = UUID.randomUUID().toString();</span>
+<span class="nc" id="L113">        LOGGER.warn(&quot;&quot;&quot;</span>
+
+                =====================================================================
+                No password configured for local Basic-auth user '{}'.
+                Generated for this run only: {}
+                Set audit.security.basic.{}-password (or the matching environment
+                variable) to pin it. Basic auth is for local development and tests;
+                production must use OIDC - the prod profile refuses to start without it.
+                =====================================================================&quot;&quot;&quot;,
+<span class="nc" id="L122">                username, generated, username);</span>
+<span class="nc" id="L123">        return generated;</span>
+    }
+
+    @Bean
+    public RateLimitFilter rateLimitFilter(AuditProperties properties) {
+<span class="fc" id="L128">        return new RateLimitFilter(properties);</span>
+    }
+
+    @Bean
+    public RequestSizeLimitFilter requestSizeLimitFilter(AuditProperties properties) {
+<span class="fc" id="L133">        return new RequestSizeLimitFilter(properties);</span>
+    }
+
+    /**
+     * Deny-by-default CORS. With no configured origins the configuration carries no
+     * allowed origin at all, so every cross-origin browser call is refused. Wildcards
+     * are never applied, and credentials are never allowed.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(AuditProperties properties) {
+<span class="fc" id="L143">        List&lt;String&gt; allowedOrigins = properties.getSecurity().getCors().getAllowedOrigins().stream()</span>
+<span class="pc bnc" id="L144" title="All 4 branches missed.">                .filter(origin -&gt; origin != null &amp;&amp; !origin.isBlank())</span>
+<span class="fc" id="L145">                .toList();</span>
+<span class="fc" id="L146">        CorsConfiguration configuration = new CorsConfiguration();</span>
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">        if (!allowedOrigins.isEmpty()) {</span>
+<span class="nc" id="L148">            configuration.setAllowedOrigins(allowedOrigins);</span>
+<span class="nc" id="L149">            configuration.setAllowedMethods(List.of(&quot;GET&quot;, &quot;POST&quot;));</span>
+<span class="nc" id="L150">            configuration.setAllowedHeaders(List.of(&quot;Authorization&quot;, &quot;Content-Type&quot;, &quot;Idempotency-Key&quot;));</span>
+<span class="nc" id="L151">            configuration.setAllowCredentials(false);</span>
+<span class="nc" id="L152">            configuration.setMaxAge(600L);</span>
+        }
+<span class="fc" id="L154">        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();</span>
+<span class="fc" id="L155">        source.registerCorsConfiguration(&quot;/**&quot;, configuration);</span>
+<span class="fc" id="L156">        return source;</span>
+    }
+
+    /**
+     * Maps token claims onto the service roles. Reads the configured roles claim and
+     * also honours standard OAuth2 scopes, so either token shape works without the
+     * application inventing authorities the IdP did not grant.
+     */
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter(AuditProperties properties) {
+<span class="fc" id="L166">        String rolesClaim = properties.getIdentity().getRolesClaim();</span>
+<span class="fc" id="L167">        JwtGrantedAuthoritiesConverter scopes = new JwtGrantedAuthoritiesConverter();</span>
+<span class="fc" id="L168">        Converter&lt;Jwt, Collection&lt;GrantedAuthority&gt;&gt; converter = jwt -&gt; {</span>
+<span class="fc" id="L169">            Collection&lt;GrantedAuthority&gt; authorities = new ArrayList&lt;&gt;(scopes.convert(jwt));</span>
+<span class="fc" id="L170">            Object claim = jwt.getClaim(rolesClaim);</span>
+<span class="fc bfc" id="L171" title="All 2 branches covered.">            if (claim instanceof Collection&lt;?&gt; roles) {</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">                for (Object role : roles) {</span>
+<span class="fc" id="L173">                    String value = String.valueOf(role);</span>
+<span class="fc" id="L174">                    authorities.add(new SimpleGrantedAuthority(</span>
+<span class="fc bfc" id="L175" title="All 2 branches covered.">                            value.startsWith(&quot;ROLE_&quot;) ? value : &quot;ROLE_&quot; + value));</span>
+                }
+            }
+<span class="fc" id="L178">            return authorities;</span>
+        };
+<span class="fc" id="L180">        JwtAuthenticationConverter authenticationConverter = new JwtAuthenticationConverter();</span>
+<span class="fc" id="L181">        authenticationConverter.setJwtGrantedAuthoritiesConverter(converter);</span>
+<span class="fc" id="L182">        return authenticationConverter;</span>
+    }
+
+    /**
+     * Builds the token decoder from {@code audit.security.oidc.*} so there is one place
+     * that describes the IdP, rather than requiring the same issuer to be repeated under
+     * {@code spring.security.oauth2.*} and kept in sync.
+     *
+     * &lt;p&gt;A JWK set URI is resolved lazily; an issuer URI is resolved at startup via
+     * discovery, which also validates that the configured issuer is reachable and real.
+     * Audience is checked when configured, so a token minted for a different service
+     * cannot be replayed against this one.
+     */
+    @Bean
+    @ConditionalOnProperty(name = &quot;audit.security.oidc.enabled&quot;, havingValue = &quot;true&quot;)
+    public JwtDecoder jwtDecoder(AuditProperties properties) {
+<span class="fc" id="L198">        AuditProperties.Oidc oidc = properties.getSecurity().getOidc();</span>
+<span class="pc bpc" id="L199" title="1 of 2 branches missed.">        NimbusJwtDecoder decoder = oidc.getJwkSetUri().isBlank()</span>
+<span class="nc" id="L200">                ? (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(oidc.getIssuerUri())</span>
+<span class="fc" id="L201">                : NimbusJwtDecoder.withJwkSetUri(oidc.getJwkSetUri()).build();</span>
+
+<span class="fc" id="L203">        List&lt;OAuth2TokenValidator&lt;Jwt&gt;&gt; validators = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L204">        validators.add(new JwtTimestampValidator());</span>
+<span class="pc bpc" id="L205" title="1 of 2 branches missed.">        if (!oidc.getIssuerUri().isBlank()) {</span>
+<span class="nc" id="L206">            validators.add(new JwtIssuerValidator(oidc.getIssuerUri()));</span>
+        }
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">        if (!oidc.getAudience().isBlank()) {</span>
+<span class="nc" id="L209">            validators.add(new JwtClaimValidator&lt;List&lt;String&gt;&gt;(&quot;aud&quot;,</span>
+<span class="nc bnc" id="L210" title="All 4 branches missed.">                    audiences -&gt; audiences != null &amp;&amp; audiences.contains(oidc.getAudience())));</span>
+        }
+<span class="fc" id="L212">        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator&lt;&gt;(validators));</span>
+<span class="fc" id="L213">        return decoder;</span>
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, AuditProperties properties,
+                                           RateLimitFilter rateLimitFilter,
+                                           RequestSizeLimitFilter requestSizeLimitFilter,
+                                           CorsConfigurationSource corsConfigurationSource,
+                                           JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+<span class="fc" id="L222">        boolean oidc = properties.getSecurity().getOidc().isEnabled();</span>
+<span class="pc bpc" id="L223" title="1 of 4 branches missed.">        boolean apiDocsPublic = !oidc &amp;&amp; properties.getSecurity().getBasic().isEnabled();</span>
+
+<span class="fc" id="L225">        http</span>
+<span class="fc" id="L226">            .cors(cors -&gt; cors.configurationSource(corsConfigurationSource))</span>
+<span class="fc" id="L227">            .csrf(csrf -&gt; {</span>
+<span class="pc bpc" id="L228" title="1 of 2 branches missed.">                if (!properties.getSecurity().isCsrfEnabled()) {</span>
+<span class="fc" id="L229">                    csrf.disable();</span>
+                }
+<span class="fc" id="L231">            })</span>
+<span class="fc" id="L232">            .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L233">            .authorizeHttpRequests(auth -&gt; {</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">                if (apiDocsPublic) {</span>
+                    // Local/dev convenience only. Switched off wholesale in production,
+                    // where springdoc itself is disabled and this branch is not taken.
+<span class="fc" id="L237">                    auth.requestMatchers(&quot;/v3/api-docs/**&quot;, &quot;/swagger-ui/**&quot;, &quot;/swagger-ui.html&quot;).permitAll();</span>
+                }
+<span class="fc" id="L239">                auth</span>
+<span class="fc" id="L240">                    .requestMatchers(HttpMethod.POST, &quot;/audit&quot;).hasAuthority(&quot;ROLE_AUDIT_WRITER&quot;)</span>
+<span class="fc" id="L241">                    .requestMatchers(HttpMethod.POST, &quot;/audit/*/redact&quot;).hasAuthority(&quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L242">                    .requestMatchers(HttpMethod.POST, &quot;/audit/retention/run&quot;).hasAuthority(&quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L243">                    .requestMatchers(HttpMethod.POST, &quot;/audit/archive&quot;).hasAuthority(&quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L244">                    .requestMatchers(HttpMethod.POST, &quot;/audit/checkpoints&quot;).hasAuthority(&quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L245">                    .requestMatchers(HttpMethod.GET, &quot;/audit/checkpoints&quot;).hasAuthority(&quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L246">                    .requestMatchers(HttpMethod.GET, &quot;/audit/export&quot;).hasAuthority(&quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L247">                    .requestMatchers(HttpMethod.GET, &quot;/audit/verify&quot;)</span>
+<span class="fc" id="L248">                            .hasAnyAuthority(&quot;ROLE_AUDIT_READER&quot;, &quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L249">                    .requestMatchers(HttpMethod.GET, &quot;/audit&quot;, &quot;/audit/*&quot;)</span>
+<span class="fc" id="L250">                            .hasAnyAuthority(&quot;ROLE_AUDIT_READER&quot;, &quot;ROLE_AUDIT_ADMIN&quot;)</span>
+<span class="fc" id="L251">                    .anyRequest().authenticated();</span>
+<span class="fc" id="L252">            })</span>
+<span class="fc" id="L253">            .addFilterBefore(requestSizeLimitFilter, BasicAuthenticationFilter.class);</span>
+
+<span class="fc bfc" id="L255" title="All 2 branches covered.">        if (oidc) {</span>
+<span class="fc" id="L256">            http.oauth2ResourceServer(server -&gt; server.jwt(jwt -&gt; jwt.jwtAuthenticationConverter(</span>
+<span class="fc" id="L257">                    (Converter&lt;Jwt, AbstractAuthenticationToken&gt;) jwtAuthenticationConverter)));</span>
+<span class="fc" id="L258">        } else {</span>
+<span class="fc" id="L259">            http.httpBasic(basic -&gt; { });</span>
+        }
+        // After authentication, so the limiter keys on the principal rather than only on IP.
+<span class="fc" id="L262">        http.addFilterAfter(rateLimitFilter, BasicAuthenticationFilter.class);</span>
+<span class="fc" id="L263">        return http.build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

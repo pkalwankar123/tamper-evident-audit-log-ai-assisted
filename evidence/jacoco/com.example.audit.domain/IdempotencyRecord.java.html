@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IdempotencyRecord.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">tamper-evident-audit-log</a> &gt; <a href="index.source.html" class="el_package">com.example.audit.domain</a> &gt; <span class="el_source">IdempotencyRecord.java</span></div><h1>IdempotencyRecord.java</h1><pre class="source lang-java linenums">package com.example.audit.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * Durable replay protection for appends.
+ *
+ * &lt;p&gt;Stored in the database rather than in a per-node cache, so a retried request is
+ * still recognised as a replay after a restart or when it lands on a different node.
+ * The unique constraint on (tenant, key) is what actually enforces single-use under
+ * concurrency: two simultaneous retries race to insert and exactly one wins, the loser
+ * is served the winner's record.
+ *
+ * &lt;p&gt;{@code requestHash} is retained so that reusing a key with a &lt;em&gt;different&lt;/em&gt;
+ * body is rejected as a conflict rather than silently returning an unrelated record -
+ * that would let a caller mask a real event behind an earlier key.
+ */
+@Entity
+@Table(name = &quot;idempotency_records&quot;,
+        uniqueConstraints = @UniqueConstraint(name = &quot;uk_idempotency_tenant_key&quot;,
+                columnNames = {&quot;tenant_id&quot;, &quot;idempotency_key&quot;}))
+public class IdempotencyRecord {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = &quot;tenant_id&quot;, nullable = false, updatable = false, length = 200)
+    private String tenantId;
+
+    @Column(name = &quot;idempotency_key&quot;, nullable = false, updatable = false, length = 200)
+    private String idempotencyKey;
+
+    @Column(name = &quot;request_hash&quot;, nullable = false, updatable = false, length = 64)
+    private String requestHash;
+
+    @Column(name = &quot;record_id&quot;, nullable = false, updatable = false)
+    private UUID recordId;
+
+    @Column(name = &quot;created_at&quot;, nullable = false, updatable = false)
+    private Instant createdAt;
+
+<span class="fc" id="L51">    protected IdempotencyRecord() {</span>
+<span class="fc" id="L52">    }</span>
+
+<span class="fc" id="L54">    public IdempotencyRecord(String tenantId, String idempotencyKey, String requestHash, UUID recordId,</span>
+                             Instant createdAt) {
+<span class="fc" id="L56">        this.tenantId = tenantId;</span>
+<span class="fc" id="L57">        this.idempotencyKey = idempotencyKey;</span>
+<span class="fc" id="L58">        this.requestHash = requestHash;</span>
+<span class="fc" id="L59">        this.recordId = recordId;</span>
+<span class="fc" id="L60">        this.createdAt = createdAt;</span>
+<span class="fc" id="L61">    }</span>
+
+<span class="nc" id="L63">    public UUID getId() { return id; }</span>
+<span class="nc" id="L64">    public String getTenantId() { return tenantId; }</span>
+<span class="nc" id="L65">    public String getIdempotencyKey() { return idempotencyKey; }</span>
+<span class="fc" id="L66">    public String getRequestHash() { return requestHash; }</span>
+<span class="fc" id="L67">    public UUID getRecordId() { return recordId; }</span>
+<span class="nc" id="L68">    public Instant getCreatedAt() { return createdAt; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>
