@@ -2,27 +2,62 @@
 
 ## What is covered
 
-`mvn clean verify` runs compilation, Checkstyle, and Spring Boot integration tests against an isolated in-memory H2 database.
+`mvn clean verify` runs compilation, Checkstyle, the test suite, and JaCoCo coverage
+instrumentation against the isolated in-memory H2 database. Test coverage is split
+across two classes by concern:
 
-`AuditLogIntegrationTest` covers:
+- **`AuditLogIntegrationTest`** (2 tests) - audit-log behavior, authenticated as
+  `admin` so the assertions stay focused on the audit-log story rather than security.
+- **`AuditSecurityTest`** (17 tests) - the authentication/authorization boundary
+  matrix, kept separately so security coverage is independently reviewable.
 
-- append and generated chain metadata
+The test suite has now been executed with Maven and JaCoCo coverage has been generated.
+The reported coverage is recorded in `docs/TEST_EXECUTION_REPORT.md`.
+
+## Audit-log behavior (`AuditLogIntegrationTest`)
+
+- append and generated chain metadata (`appendQueryVerifyRedactAndDetectDirectTampering`)
 - filtered query
 - successful full-chain verification
 - API redaction that keeps the chain intact
-- unauthorized payload mutation detected by verify
-- signed export with a contiguous proof segment
+- unauthorized/direct payload mutation detected by verify
+  (`intact=false`, `violationType=PAYLOAD_OR_REDACTION_LEDGER_MISMATCH`)
+- signed export with a contiguous proof segment (`exportContainsSignedContiguousProofSegment`)
 
-## What is not covered (and why)
+## Security (`AuditSecurityTest`) - authentication, no credentials (expect 401)
 
-| Gap | Why deferred |
-|---|---|
-| Multi-JVM concurrent writers | Prototype is single-node; cluster sequencer is out of scope |
-| PostgreSQL Testcontainers | Optional profile exists; H2 proves API/integrity behavior locally |
-| Cryptographic re-verify of export signature in test | Manifest fields asserted; offline verify is a reviewer manual step |
-| Dedicated archive + verify regression | Soft-archive path exists; verify always includes archived rows by design |
-| Authn/authz, rate limits, oversized payloads | Explicit security/product boundary for this exercise |
+Every role-guarded endpoint, including redact:
 
-## Trade-off
+- `appendWithoutCredentialsIsRejected` - `POST /audit`
+- `queryWithoutCredentialsIsRejected` - `GET /audit`
+- `verifyWithoutCredentialsIsRejected` - `GET /audit/verify`
+- `redactWithoutCredentialsIsRejected` - `POST /audit/{id}/redact`
+- `exportWithoutCredentialsIsRejected` - `GET /audit/export`
 
-Prefer end-to-end integrity tests that match the assignment’s validation story (write → query → verify → tamper → verify) over broad unit coverage of plumbing. Production would add concurrency, DB-parity, and security tests.
+## Security (`AuditSecurityTest`) - authorization, wrong role (expect 403)
+
+- `readerCannotAppend`
+- `writerCannotQuery`
+- `writerCannotVerify`
+- `writerCannotRedact`
+- `readerCannotRedact`
+- `readerCannotExport`
+
+## Security (`AuditSecurityTest`) - authorization, correct role succeeds
+
+- `writerCanAppend`
+- `readerCanQueryAndVerify`
+- `adminCanRedact`
+- `adminCanExport`
+
+## Security (`AuditSecurityTest`) - public endpoints
+
+- `apiDocsAreAccessibleWithoutCredentials`
+- `swaggerUiIsAccessibleWithoutCredentials`
+
+## Coverage interpretation
+
+The executed JaCoCo report shows **84% instruction coverage** and **54% branch
+coverage** across the project. This is acceptable for the prototype because the tests
+prioritize the assignment's core security and integrity behavior rather than maximizing
+coverage of every framework/plumbing branch.

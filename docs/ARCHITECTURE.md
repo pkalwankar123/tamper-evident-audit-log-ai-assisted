@@ -6,7 +6,39 @@
 - `AuditService`: append serialization, canonical hashing, filtering, redaction, archival, and verification.
 - `ExportService`: builds a contiguous chain segment and signs its manifest.
 - `RetentionService`: scheduled soft archival based on configurable age.
+- `SecurityConfig`: HTTP Basic authentication and role-based authorization (see below).
 - JPA repositories: H2 for local execution and PostgreSQL profile for realistic deployment.
+
+## Authentication & authorization
+
+Every `/audit/**` endpoint requires HTTP Basic credentials, enforced by a Spring Security
+`SecurityFilterChain` (`SecurityConfig`) that matches on HTTP method and path before any
+controller code runs. Three disjoint roles keep the boundary explicit:
+
+| Role | Access |
+|---|---|
+| `ROLE_AUDIT_WRITER` | `POST /audit` only |
+| `ROLE_AUDIT_READER` | `GET /audit`, `GET /audit/verify` |
+| `ROLE_AUDIT_ADMIN` | Everything, including `POST /audit/{id}/redact` and `GET /audit/export` |
+
+Redaction and export require `ROLE_AUDIT_ADMIN` specifically rather than falling back to
+read access, because both produce privacy-affecting or evidentiary output - being able to
+*view* a record does not imply authority to redact or export it. Roles are deliberately
+kept disjoint (not hierarchical) so the authorization tests demonstrate real separation of
+duties: `admin` is granted all three authorities explicitly, rather than reader/writer
+being subsets implied by a role hierarchy.
+
+Users are held in an `InMemoryUserDetailsManager` with BCrypt-hashed dev-only default
+passwords, overridable via `AUDIT_SECURITY_WRITER_PASSWORD` / `_READER_PASSWORD` /
+`_ADMIN_PASSWORD` environment variables - the same override pattern already used for the
+Ed25519 signing keys. Sessions are stateless (`SessionCreationPolicy.STATELESS`, no cookie
+is issued) and CSRF protection is disabled, since CSRF defends session/cookie-based flows
+that do not apply to a per-request Basic-authenticated REST API. `/v3/api-docs/**` and
+`/swagger-ui/**` remain public for local/demo convenience.
+
+This authenticates and authorizes API access; it is not an identity platform. See
+`docs/RISKS_AND_TRADEOFFS.md` for what is out of scope (external IdP, MFA, secrets
+management, key rotation, auditing of auth failures themselves).
 
 ## Main-chain design
 
