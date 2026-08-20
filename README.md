@@ -4,8 +4,7 @@ AI-assisted Spring Boot 3 / Java 21 prototype: append-only audit events, SHA-256
 
 **Candidate:** Pradeep Kalwankar (`pradipkalwankar143@gmail.com`)  
 **Attestation:** see `ATTESTATION.md`  
-**AI process:** see `AI_USAGE_LOG.md`  
-**Last verified commit:** `b0391a1` (see `git log -1` to confirm against your checkout)
+**AI process:** see `AI_USAGE_LOG.md`
 
 ## Quick start
 
